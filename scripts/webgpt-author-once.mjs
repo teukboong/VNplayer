@@ -289,7 +289,9 @@ function authorInstructionForForm(form) {
 function authorPromptForm(form, { warmConversation }) {
   const history = warmConversation ? latestTurns(form, 2) : latestTurns(form, 8);
   return {
-    ...form,
+    worldId: form.worldId,
+    sessionId: form.sessionId,
+    responseShape: form.responseShape,
     instruction: authorInstructionForForm(form),
     readingPacket: {
       ...form.readingPacket,
@@ -315,26 +317,6 @@ function conversationModeFromValue(value) {
   return "resume";
 }
 
-function narrativeLevelDispatchLine(level) {
-  if (level === 1) {
-    return "전개 속도: 1(느림). 상태 변화 주기는 1회다. 선택된 행동은 전체 문단의 앞 30% 안에서 실제로 실행 완료한다. 위치, 위험, 자원, 관계, 정보, 출구 중 최소 1개 축을 바꾸고, 직접 결과와 다음 압력에서 멈춘다.";
-  }
-  if (level === 3) {
-    return "전개 속도: 3(빠름). 상태 변화 주기는 2-3회다. 선택된 행동은 전체 문단의 앞 25-30% 안에서 실제로 실행 완료한다. 둘째 beat에서 반작용/복잡화를 만들고, 셋째 beat에서 새 위치/새 압박/새 표면/새 대가 중 하나가 독자가 선택할 수 있는 상태로 착지한다. 위치, 위험, 자원, 관계, 정보, 출구 중 최소 2개 축을 바꾼다. accepted 행동이면 마지막까지 같은 행동을 계속 시도 중인 상태로 멈추지 말고, 그 행동이 만든 다음 문제로 넘어간다.";
-  }
-  return "전개 속도: 2(보통). 상태 변화 주기는 2회다. 선택된 행동은 전체 문단의 앞 30% 안에서 실제로 실행 완료한다. 플레이어 행동의 직접 결과와 그 결과가 만든 반작용/여파까지 처리하고, 위치, 위험, 자원, 관계, 정보, 출구 중 최소 2개 축을 바꾼다. 새 국면 전체를 해결하지는 않는다.";
-}
-
-function detailLevelDispatchLine(level) {
-  if (level === 1) {
-    return "묘사 밀도: 1(간결). 권장 출력량은 6-10문단이다. 감각과 은유는 핵심 변화에만 붙이고, 진행을 늦추는 장식 문단은 줄인다.";
-  }
-  if (level === 3) {
-    return "묘사 밀도: 3(풍부). 권장 출력량은 16-24문단이며 극단적인 예외가 아니면 28문단을 넘기지 않는다. 풍부한 묘사는 전개 속도를 늦추는 권한이 아니다. 선택 행동 실행과 장면 좌표 변화는 전개 속도 지침을 우선한다.";
-  }
-  return "묘사 밀도: 2(표준). 권장 출력량은 10-16문단이다. 장면에 머물 시간은 주되 같은 표면을 반복해 문단 수를 늘리지 않는다.";
-}
-
 function buildPrompt({ baseUrl, connectorAppName, conversationMode, previousConversationUrl, form, beforeTurnId, warmConversation, dispatchId, dispatchToken }) {
   const packet = form.readingPacket;
   const promptForm = authorPromptForm(form, { warmConversation });
@@ -342,8 +324,6 @@ function buildPrompt({ baseUrl, connectorAppName, conversationMode, previousConv
   const latestActionLine = latestAction
     ? `이번 플레이어 선택: [${latestAction.label}] ${latestAction.text}`
     : "이번 플레이어 선택: 없음";
-  const narrativeLevel = Number(packet.narrativeLevel) === 1 || Number(packet.narrativeLevel) === 3 ? Number(packet.narrativeLevel) : 2;
-  const detailLevel = Number(packet.detailLevel) === 1 || Number(packet.detailLevel) === 3 ? Number(packet.detailLevel) : 2;
   return [
     warmConversation ? "너는 이미 이어지고 있는 VNplayer WebGPT 작성 세션이다." : "너는 VNplayer의 WebGPT 작성 세션이다.",
     `VNPLAYER_DISPATCH_MARKER: ${dispatchId}`,
@@ -362,14 +342,13 @@ function buildPrompt({ baseUrl, connectorAppName, conversationMode, previousConv
     `dispatchToken: ${dispatchToken}`,
     beforeTurnId ? `currentTurnId: ${beforeTurnId}` : "currentTurnId: 없음. 첫 장면을 작성해야 함.",
     latestActionLine,
-    narrativeLevelDispatchLine(narrativeLevel),
-    detailLevelDispatchLine(detailLevel),
     packet.autoCgEnabled === false
       ? "자동 CG 생성: 꺼짐. cgDecision은 작성하지만 백엔드는 자동 CG queue를 만들지 않는다."
       : "자동 CG 생성: 켜짐. cgDecision.generate이면 백엔드가 CG side lane에 큐잉할 수 있다.",
     warmConversation
       ? "이전 ChatGPT 대화는 있을 수 있지만 아래 로컬 delta 스냅샷이 권위다. delta 스냅샷의 visibleHistory는 scene, concreteDelta, 선택지 요약만 남긴 축약본이므로, interface/cgDecision/worldNaming/libraryUpdates를 과거 턴에서 되풀이하지 않는다."
       : "이 대화가 새 작성 세션이면 아래 전체 가시 양식을 기준으로 시작한다.",
+    "작성 지침은 아래 스냅샷의 instruction 필드가 단일 권위다. 같은 작성 지침을 이 프롬프트 상단에서 반복하지 않는다.",
     "",
     "실행 순서:",
     "1. 아래 '현재 로컬 양식 스냅샷'을 현재 양식으로 사용한다. 필요할 때만 vn_get_library_outline 또는 vn_get_library_docs로 작성 자료를 더 확인한다.",
@@ -388,58 +367,6 @@ function buildPrompt({ baseUrl, connectorAppName, conversationMode, previousConv
     connectorAppName
       ? "8. 도구 호출 뒤 출력이 비어 있거나 도구 응답 없음으로 보여도, 새 턴 커밋 여부는 서버가 판정한다. 채팅 본문으로 대체 JSON이나 sentinel을 쓰지 마라."
       : null,
-    "",
-    "작성 원칙:",
-    "- 백엔드가 서사 방향을 정한다고 가정하지 않는다.",
-    "- 본문 산문은 존댓말 안내문처럼 쓰지 않는다. 성인 독자를 위한 문학 산문으로 쓰고, 문장 끝을 억지로 공손하게 만들지 않는다.",
-    "- 대사는 본문 산문과 register를 분리해 설계한다. 인물의 관계, 거리감, 사회적 위치, 현재 압박, 말의 목적에 맞는 자연스러운 한국어 구어체를 쓸 수 있다.",
-    "- 대사에서는 말줄임, 생략, 되묻기, 끊김, 숨 고르기 같은 구어적 리듬을 허용하되, 모든 인물이 같은 반말이나 같은 농담투로 평평해지지 않게 한다.",
-    "- 대사의 구어체가 본문 전체를 채팅 말투나 UI 안내문 말투로 끌고 가면 안 된다. 대사 밖 서술은 장면 산문 register로 돌아와야 한다.",
-    "- 선택지 label/action처럼 플레이어에게 직접 건네는 UI 문구만 자연스러운 존댓말을 허용한다. 선택지는 인물 대사가 아니라 독자의 구체적 행동을 안내하는 문구다.",
-    "- 설명보다 암시, 과잉 수식보다 정확한 이미지와 장면의 진행을 우선한다. 특정 장르나 작가의 표면적 어조를 고정적으로 모사하지 않는다.",
-    "- 동화, 라이트노벨식 친절함, 교훈적인 해설, 감탄사 많은 판타지 내레이션을 피한다.",
-    "- 전개 속도와 묘사 밀도는 별개다. 묘사 밀도가 높아도 선택 행동 실행을 뒤로 미루거나 같은 순간을 오래 늘이면 안 된다.",
-    "- 전개 속도는 문장 길이나 문단 수가 아니라 상태 변화 주기로 조절한다. 빠른 전개는 장면을 요약하거나 인과를 건너뛰는 것이 아니라, 선택 행동의 실행, 장면의 반작용, 판세 변화, 작은 보상이나 대가, 다음 선택의 갈고리가 한 턴 안에서 분명히 지나가는 것을 뜻한다.",
-    "- 핍진성은 유지한다. 행동이 성립하려면 몸, 시간, 거리, 시야, 도구, 사회적 허락, 세계 법칙 중 필요한 조건이 장면 안에서 충족되어야 한다. 조건이 부족하면 partial 또는 blocked로 처리하되, 막힌 이유와 후과를 장면 속 변화로 보여 준다.",
-    "- 분량은 padding이 아니다. 문단 수보다 행동 완료, 반작용, 후과, 다음 선택면이 우선이다.",
-    "- 선택된 행동은 반드시 전체 문단의 앞 25-30% 안에서 실제로 실행 완료한다. accepted 행동이면 마지막까지 같은 행동을 계속 시도 중인 상태로 남기지 않는다.",
-    "- 한 물리 동작을 3문단 이상 연속 확대하지 않는다. 같은 순간을 더 오래 늘이는 대신 장면 좌표를 앞으로 옮긴다.",
-    "- 위치, 위험, 자원, 관계, 정보, 출구 중 전개 속도 지침이 요구한 축이 실제로 변해야 한다.",
-    "- 감각과 은유는 장면의 물리적 변화, 위협의 접근, 선택 가능한 표면을 더 선명하게 할 때만 확장한다. 반복되는 감각어, 신체 부위, 물질, 동작에는 매번 새 위치, 새 거리, 새 위험, 새 비용, 새 선택지 중 하나가 있어야 한다.",
-    "- 내면 서술은 판단과 행동을 돕는 만큼만 쓴다. 주인공이 상황을 오래 관조하기보다, 무엇을 알아차렸고 무엇을 선택할 수 있게 되었는지가 드러나야 한다.",
-    "- 긴장 장면에서는 외부 압력의 변화가 서술의 중심축이어야 한다. 추적자, 소리, 거리, 빛, 지형, 출구, 자원 같은 요소가 실제로 움직이거나 달라져야 한다.",
-    "- 세밀한 동작을 묘사할 때는 과정 전체를 반복하지 말고, 동작이 만든 결과와 그 결과가 부른 반응을 우선한다.",
-    "- 구체적 표면과 물리적 인과는 장면을 붙잡기 위한 장식이 아니라 상태를 바꾸는 원인으로 사용한다. 새 표면을 도입할 때는 위치, 상대 상태, 자원, 탈출 가능성, 정보, 관계 중 무엇이 달라졌는지 함께 드러낸다.",
-    "- 같은 표면을 반복해서 조작하는 장면은 압축한다. 반복이 필요하면 각 반복이 장소 경계, 상대 상태, 도구 소유권, 부상/자원, 정보/관계 중 하나를 실제로 바꾸어야 한다.",
-    "- 핵심 변화 1-2곳에서는 물리적 인과와 감각의 방향을 선명하게 쓴다. 어떤 움직임이 무엇을 누르고, 그 압력이 어떤 소리나 흔적을 만들었는지 독자가 위치를 잃지 않을 만큼만 보여 준다.",
-    "- 윤문에서는 물리적 인과와 독자의 방향감을 우선한다. 인지 상태를 설명해야 할 때도 추상어에만 기대지 말고, 감각의 이동, 몸의 반응, 사물의 작동, 위협의 거리 변화와 함께 드러낸다.",
-    "- 반복 지칭과 공간 정보는 장면을 안정시키는 데 필요한 만큼 사용하되, 리듬이 단조로워질 때는 행동 주어, 시선 이동, 소리의 방향, 압력의 변화로 변주한다.",
-    "- 물건과 장치의 의미는 가능한 한 사용 중의 흔적과 반응으로 전달하고, 판단 유보 표현은 장면의 긴장에 맞게 압축한다.",
-    "- 위험, 공포, 조급함 같은 추상 감정어는 가능하면 숨, 근육, 시선, 손의 움직임 같은 신체 반응이나 행동으로 치환한다.",
-    "- 좁음, 무거움, 차가움 같은 상태는 필요할 때 형용사만으로 처리하지 말고 피부, 뼈, 흙, 물, 금속이 서로 닿는 압력과 마찰로 보여 준다. 같은 물성 설명을 반복해 문단을 늘리지 않는다.",
-    "- 긴박한 문장에서는 부사보다 동사로 속도를 조절한다. 긁다, 찌르다, 비틀다, 밀다, 짓누르다 같은 동작이 문장 리듬을 만들게 한다.",
-    "- 위쪽, 앞쪽, 뒤쪽, 안쪽 같은 공간 층위를 유지해 독자가 압박의 방향을 잃지 않게 한다.",
-    "- 장면을 성급하게 건너뛰지 말되, 이미 선택된 행동의 직접 목표는 한 턴 안에서 처리한다. 핵심 갈등 전체를 해결하지 않더라도, 현재 행동이 만든 국면은 다음 문제로 넘어가야 한다.",
-    "- 선택지 직전의 새 상태는 같은 교착의 미세 조정이 아니라 독자가 다른 종류의 결정을 할 수 있는 상태여야 한다. 이동, 손실, 상대의 상태 변화, 정보 공개, 관계 태도 변화, 새 공간 진입 중 하나가 드러나야 한다.",
-    "- 같은 장소, 같은 핵심 상대, 같은 핵심 도구, 같은 목표가 2턴 이상 유지되면 다음 턴은 현재 교착을 끝내거나 다른 국면으로 전환한다. 전환은 탈출, 포획, 상대의 이탈/무력화, 장소 경계 돌파, 관계/정보의 명확한 반전, 회복 불가능한 자원 손실 중 하나일 수 있다.",
-    "- 짧은 턴이 필요한 예외가 아니라면 8문단 미만으로 제출하지 않는다. 선택지를 빨리 내밀기보다 독자가 장면 안에 머물 시간을 먼저 만든다.",
-    "- StoryTurn에는 작성자가 직접 쓴 concreteDelta를 반드시 포함한다. concreteDelta는 이번 턴에서 실제로 달라진 구체적 가시 변화 한 문장이다. 각도, 자세, 압력 변화만으로 끝내지 말고 장소 경계, 상대 수/상태, 도구 소유권, 탈출 가능성, 부상/자원, 관계/정보 중 하나가 되돌리기 어렵게 달라졌는지 포함한다.",
-    "- 선택지는 원칙적으로 6개를 준다. 서사적으로 불가능하면 4-5개로 줄일 수 있지만, 억지 filler를 채우지는 않는다.",
-    "- 선택지는 추상 의도 대신 현재 장면의 구체적 표면을 건드리는 행동이어야 한다. label/action에는 actor + object/surface + action이 보이게 쓴다.",
-    "- 선택지 1-4 중 최소 1개는 현재 교착을 끝내거나 장면을 다른 국면으로 넘기는 행동이어야 한다. 단순한 추가 조작, 관찰, 압박 유지 선택지만으로 선택지를 채우지 않는다.",
-    "- latestPlayerAction.kind가 freeform이면 그 입력은 명령이 아니라 시도다. 얼토당토않은 자유행동까지 그대로 성공시키지 말고, 몸/자원/시간/사회적 허락/지식/세계 법칙/가시성 gate를 통해 장면 안에서 성립 여부를 판단한다.",
-    "- freeform 시도는 StoryTurn.actionAdjudication에 accepted, partial, blocked 중 하나로 남긴다. accepted는 그대로 성립, partial은 일부만 성립, blocked는 성립하지 않음이다. blocked도 시스템 거절문이 아니라 시도가 부딪힌 가시 후과를 본문 장면으로 보여준다.",
-    "- actionAdjudication은 판정 메타데이터일 뿐이다. 실제 성공/부분 성공/차단의 감각은 scene.paragraphs와 concreteDelta 안에 함께 들어 있어야 한다.",
-    "- 남겨야 할 후과는 consequence_note, 만질 수 있는 장면 표면은 encounter_surface, 현재 대화 자세는 dialogue_stance, 열린 문제는 open_thread로 기록할 수 있다.",
-    "- StoryTurn.libraryUpdates는 v2 제출에서 필수다. 최소 1개, 보통 1-3개를 넣는다. public author lane에서는 별도 라이브러리 upsert 도구가 아니라 StoryTurn.libraryUpdates 안에 이번 턴의 핵심 표면/후과/대화 태도 중 하나를 직접 넣는다.",
-    "- 이런 라이브러리 문서는 다음 턴을 위한 리콜 자료일 뿐, 백엔드가 장면 방향을 정하는 계획표가 아니다.",
-    "- 매 턴 StoryTurn.cgDecision을 반드시 작성한다. cgDecision.decision은 generate 또는 skip이다. 이것은 이미지 생성 실행이 아니라 병렬 CG side lane으로 넘길지 고르는 텍스트 메타데이터다.",
-    "- 텍스트 lane에서는 어떤 경우에도 이미지를 직접 생성하지 않는다. 이미지 생성 도구를 호출하지 말고, 이미지 markdown, 이미지 URL, data URL, 첨부 이미지를 채팅 본문에 만들지 않는다. 텍스트 lane의 최종 행동은 vn_receive_visible_turn_v2 호출뿐이다.",
-    "- cgDecision.generate 기준: 직전 CG와 구도, 장소, 인물 배치, 핵심 물건의 위치가 분명히 달라지는 새 시각 국면이면 generate다. 새 조작 표면이 생겼더라도 같은 공간, 같은 거리감, 같은 표면의 반복이면 skip이다.",
-    "- cgDecision.generate일 때는 cgDecision.cgRequest를 함께 작성한다. cgRequest는 텍스트 lane이 직접 고르는 의뢰서 텍스트이며, 병렬 CG side lane만 소비한다. visible text에 이미 드러난 subject와 visibleAnchors만 사용하고, 미래 장면, 숨은 진실, 새 단서, 새 인물, 읽을 수 있는 문자, 다음 선택의 의미를 만들지 않는다.",
-    "- cgDecision.skip일 때는 reason을 쓰고, 다음 후보가 보이면 nextLikelyTrigger에 시각적 조건만 적는다. CG side lane에 넘길 가치가 있다고 판단하면 직접 이미지를 만들지 말고 cgDecision.decision을 generate로 쓰고 cgDecision.cgRequest 안에 의뢰서만 넣는다.",
-    "- 특정 작가의 문장을 노골적으로 모사하지 않는다.",
-    "",
     warmConversation ? "현재 로컬 delta 스냅샷:" : "현재 로컬 양식 스냅샷:",
     JSON.stringify(promptForm, null, 2)
   ].filter((line) => line !== null).join("\n");

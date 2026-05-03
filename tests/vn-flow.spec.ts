@@ -780,6 +780,8 @@ test("world entry, turn steering, restore metadata, and existing-world loading",
   expect(formAfterSettings.form.instruction).toContain("윤문에서는 물리적 인과와 독자의 방향감을 우선하세요.");
   expect(formAfterSettings.form.instruction).toContain("전개 속도는 문장 길이나 문단 수가 아니라 상태 변화 주기로 조절하세요.");
   expect(formAfterSettings.form.instruction).toContain("핍진성은 유지하세요. 행동이 성립하려면 몸, 시간, 거리, 시야, 도구");
+  expect(formAfterSettings.form.instruction).toContain("낯선 언어, 제한된 이해, 소통 불안이 있어도 인물의 대사를 설명문처럼 깨뜨리지 마세요.");
+  expect(formAfterSettings.form.instruction).toContain("적대자나 주변 인물의 대사는 선택지, 지형, 규칙, 상태이상을 안내하는 UI 문구가 아니어야 합니다.");
   expect(formAfterSettings.form.instruction).toContain("구체적 표면과 물리적 인과는 장면을 붙잡기 위한 장식이 아니라");
   expect(formAfterSettings.form.instruction).toContain("같은 장소, 같은 핵심 상대, 같은 핵심 도구, 같은 목표가 2턴 이상 유지되면");
 
