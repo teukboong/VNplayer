@@ -778,6 +778,10 @@ test("world entry, turn steering, restore metadata, and existing-world loading",
   expect(formAfterSettings.form.instruction).toContain("전개 속도는 3, 빠름입니다.");
   expect(formAfterSettings.form.instruction).toContain("묘사 밀도는 1, 간결입니다.");
   expect(formAfterSettings.form.instruction).toContain("윤문에서는 물리적 인과와 독자의 방향감을 우선하세요.");
+  expect(formAfterSettings.form.instruction).toContain("전개 속도는 문장 길이나 문단 수가 아니라 상태 변화 주기로 조절하세요.");
+  expect(formAfterSettings.form.instruction).toContain("핍진성은 유지하세요. 행동이 성립하려면 몸, 시간, 거리, 시야, 도구");
+  expect(formAfterSettings.form.instruction).toContain("구체적 표면과 물리적 인과는 장면을 붙잡기 위한 장식이 아니라");
+  expect(formAfterSettings.form.instruction).toContain("같은 장소, 같은 핵심 상대, 같은 핵심 도구, 같은 목표가 2턴 이상 유지되면");
 
   await callTool(page, "vn_receive_visible_turn_v2", {
     worldId: createdWorld.worldId,
