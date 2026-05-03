@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   cg_webgpt_conversation_id TEXT,
   auto_cg_enabled INTEGER NOT NULL DEFAULT 1,
   narrative_level INTEGER NOT NULL DEFAULT 2,
+  detail_level INTEGER NOT NULL DEFAULT 2,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   active_turn_id TEXT

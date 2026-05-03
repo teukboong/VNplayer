@@ -55,6 +55,7 @@ function applyCompatibilityMigrations(db: DatabaseSync): void {
   addColumn("ALTER TABLE sessions ADD COLUMN cg_webgpt_conversation_id TEXT;");
   addColumn("ALTER TABLE sessions ADD COLUMN auto_cg_enabled INTEGER NOT NULL DEFAULT 1;");
   addColumn("ALTER TABLE sessions ADD COLUMN narrative_level INTEGER NOT NULL DEFAULT 2;");
+  addColumn("ALTER TABLE sessions ADD COLUMN detail_level INTEGER NOT NULL DEFAULT 2;");
   addColumn("ALTER TABLE webgpt_dispatches ADD COLUMN dispatch_token_hash TEXT;");
   addColumn("ALTER TABLE library_doc_versions ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}';");
   db.exec(`

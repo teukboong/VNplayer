@@ -754,25 +754,29 @@ test("world entry, turn steering, restore metadata, and existing-world loading",
 
   const sessionSettings = await callTool<{
     ok: true;
-    session: { autoCgEnabled: boolean; narrativeLevel: number };
+    session: { autoCgEnabled: boolean; narrativeLevel: number; detailLevel: number };
   }>(page, "vn_update_session_settings", {
     worldId: createdWorld.worldId,
     sessionId: createdWorld.latestSessionId,
     autoCgEnabled: false,
-    narrativeLevel: 3
+    narrativeLevel: 3,
+    detailLevel: 1
   });
   expect(sessionSettings.session.autoCgEnabled).toBe(false);
   expect(sessionSettings.session.narrativeLevel).toBe(3);
+  expect(sessionSettings.session.detailLevel).toBe(1);
   const formAfterSettings = await callTool<{
     ok: true;
-    form: { instruction: string; readingPacket: { autoCgEnabled: boolean; narrativeLevel: number } };
+    form: { instruction: string; readingPacket: { autoCgEnabled: boolean; narrativeLevel: number; detailLevel: number } };
   }>(page, "vn_get_current_form", {
     worldId: createdWorld.worldId,
     sessionId: createdWorld.latestSessionId
   });
   expect(formAfterSettings.form.readingPacket.autoCgEnabled).toBe(false);
   expect(formAfterSettings.form.readingPacket.narrativeLevel).toBe(3);
-  expect(formAfterSettings.form.instruction).toContain("서사 레벨은 3입니다.");
+  expect(formAfterSettings.form.readingPacket.detailLevel).toBe(1);
+  expect(formAfterSettings.form.instruction).toContain("전개 속도는 3, 빠름입니다.");
+  expect(formAfterSettings.form.instruction).toContain("묘사 밀도는 1, 간결입니다.");
 
   await callTool(page, "vn_receive_visible_turn_v2", {
     worldId: createdWorld.worldId,
@@ -834,7 +838,7 @@ test("world entry, turn steering, restore metadata, and existing-world loading",
   const autoOffCgState = await callTool<{
     ok: true;
     state: {
-      session: { autoCgEnabled: boolean; narrativeLevel: number };
+      session: { autoCgEnabled: boolean; narrativeLevel: number; detailLevel: number };
       currentCgAsset: { id: string } | null;
     };
   }>(page, "vn_get_reader_state", {
@@ -843,6 +847,7 @@ test("world entry, turn steering, restore metadata, and existing-world loading",
   });
   expect(autoOffCgState.state.session.autoCgEnabled).toBe(false);
   expect(autoOffCgState.state.session.narrativeLevel).toBe(3);
+  expect(autoOffCgState.state.session.detailLevel).toBe(1);
   expect(autoOffCgState.state.currentCgAsset).toBeNull();
   const manualCgRequest = await callTool<{
     ok: true;
@@ -856,7 +861,8 @@ test("world entry, turn steering, restore metadata, and existing-world loading",
     worldId: createdWorld.worldId,
     sessionId: createdWorld.latestSessionId,
     autoCgEnabled: true,
-    narrativeLevel: 2
+    narrativeLevel: 2,
+    detailLevel: 2
   });
 
   const cgState = await callTool<{

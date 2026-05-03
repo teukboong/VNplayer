@@ -317,12 +317,22 @@ function conversationModeFromValue(value) {
 
 function narrativeLevelDispatchLine(level) {
   if (level === 1) {
-    return "서사 레벨: 1. 진행 예산은 1 beat다. 출력량은 짧지만 충분한 체류감이 있게, 대략 8-12문단으로 쓴다. 플레이어 행동의 직접 실행과 즉각 반응만 처리하고, 감각 묘사는 짧게 두며, 바뀐 위치나 즉각적인 반응을 중심으로 다음 선택 지점에서 멈춘다.";
+    return "전개 속도: 1(느림). 진행 예산은 1 beat다. 선택된 행동은 전체 문단의 앞 30% 안에서 실제로 실행 완료한다. 위치, 위험, 자원, 관계, 정보, 출구 중 최소 1개 축을 바꾸고, 직접 결과와 다음 압력에서 멈춘다.";
   }
   if (level === 3) {
-    return "서사 레벨: 3. 진행 예산은 3 beat다. 출력량은 눈에 띄게 길게, 대략 32-48문단도 허용하되 문단 수보다 사건 좌표 변화가 우선이다. 첫 beat에서 플레이어 행동을 실제로 실행하고, 둘째 beat에서 반작용/복잡화를 만들고, 셋째 beat에서 새 위치/새 압박/새 표면/새 대가 중 하나가 독자가 선택할 수 있는 상태로 착지하게 한다. 분량이 길어질수록 같은 순간을 확대하기보다 행동의 결과가 위치, 위험, 자원, 관계, 출구 중 여러 축으로 파급되어야 한다. accepted 행동이면 마지막까지 같은 행동을 계속 시도 중인 상태로 멈추지 말고, 그 행동이 만든 다음 문제로 넘어간다.";
+    return "전개 속도: 3(빠름). 진행 예산은 3 beat다. 선택된 행동은 전체 문단의 앞 25-30% 안에서 실제로 실행 완료한다. 둘째 beat에서 반작용/복잡화를 만들고, 셋째 beat에서 새 위치/새 압박/새 표면/새 대가 중 하나가 독자가 선택할 수 있는 상태로 착지한다. 위치, 위험, 자원, 관계, 정보, 출구 중 최소 2개 축을 바꾼다. accepted 행동이면 마지막까지 같은 행동을 계속 시도 중인 상태로 멈추지 말고, 그 행동이 만든 다음 문제로 넘어간다.";
   }
-  return "서사 레벨: 2. 진행 예산은 2 beat다. 출력량은 중간 길이, 대략 16-24문단으로 레벨 1보다 명확히 길고 레벨 3보다 명확히 짧게 쓴다. 플레이어 행동의 직접 결과와 그 결과가 만든 반작용/여파까지 처리하고, 감각, 외부 압력, 선택 가능한 표면이 최소 한 번씩 변화해야 한다. 새 국면 전체를 해결하지는 않는다.";
+  return "전개 속도: 2(보통). 진행 예산은 2 beat다. 선택된 행동은 전체 문단의 앞 30% 안에서 실제로 실행 완료한다. 플레이어 행동의 직접 결과와 그 결과가 만든 반작용/여파까지 처리하고, 위치, 위험, 자원, 관계, 정보, 출구 중 최소 2개 축을 바꾼다. 새 국면 전체를 해결하지는 않는다.";
+}
+
+function detailLevelDispatchLine(level) {
+  if (level === 1) {
+    return "묘사 밀도: 1(간결). 권장 출력량은 6-10문단이다. 감각과 은유는 핵심 변화에만 붙이고, 진행을 늦추는 장식 문단은 줄인다.";
+  }
+  if (level === 3) {
+    return "묘사 밀도: 3(풍부). 권장 출력량은 16-24문단이며 극단적인 예외가 아니면 28문단을 넘기지 않는다. 풍부한 묘사는 전개 속도를 늦추는 권한이 아니다. 선택 행동 실행과 장면 좌표 변화는 전개 속도 지침을 우선한다.";
+  }
+  return "묘사 밀도: 2(표준). 권장 출력량은 10-16문단이다. 장면에 머물 시간은 주되 같은 표면을 반복해 문단 수를 늘리지 않는다.";
 }
 
 function buildPrompt({ baseUrl, connectorAppName, conversationMode, previousConversationUrl, form, beforeTurnId, warmConversation, dispatchId, dispatchToken }) {
@@ -333,6 +343,7 @@ function buildPrompt({ baseUrl, connectorAppName, conversationMode, previousConv
     ? `이번 플레이어 선택: [${latestAction.label}] ${latestAction.text}`
     : "이번 플레이어 선택: 없음";
   const narrativeLevel = Number(packet.narrativeLevel) === 1 || Number(packet.narrativeLevel) === 3 ? Number(packet.narrativeLevel) : 2;
+  const detailLevel = Number(packet.detailLevel) === 1 || Number(packet.detailLevel) === 3 ? Number(packet.detailLevel) : 2;
   return [
     warmConversation ? "너는 이미 이어지고 있는 VNplayer WebGPT 작성 세션이다." : "너는 VNplayer의 WebGPT 작성 세션이다.",
     `VNPLAYER_DISPATCH_MARKER: ${dispatchId}`,
@@ -352,6 +363,7 @@ function buildPrompt({ baseUrl, connectorAppName, conversationMode, previousConv
     beforeTurnId ? `currentTurnId: ${beforeTurnId}` : "currentTurnId: 없음. 첫 장면을 작성해야 함.",
     latestActionLine,
     narrativeLevelDispatchLine(narrativeLevel),
+    detailLevelDispatchLine(detailLevel),
     packet.autoCgEnabled === false
       ? "자동 CG 생성: 꺼짐. cgDecision은 작성하지만 백엔드는 자동 CG queue를 만들지 않는다."
       : "자동 CG 생성: 켜짐. cgDecision.generate이면 백엔드가 CG side lane에 큐잉할 수 있다.",
@@ -386,9 +398,11 @@ function buildPrompt({ baseUrl, connectorAppName, conversationMode, previousConv
     "- 선택지 label/action처럼 플레이어에게 직접 건네는 UI 문구만 자연스러운 존댓말을 허용한다. 선택지는 인물 대사가 아니라 독자의 구체적 행동을 안내하는 문구다.",
     "- 설명보다 암시, 과잉 수식보다 정확한 이미지와 장면의 진행을 우선한다. 특정 장르나 작가의 표면적 어조를 고정적으로 모사하지 않는다.",
     "- 동화, 라이트노벨식 친절함, 교훈적인 해설, 감탄사 많은 판타지 내레이션을 피한다.",
-    "- 한 턴은 레이턴시를 감당할 만큼 충분한 장면이어야 한다. 분량은 위의 서사 레벨별 진행/분량 지침을 따른다.",
-    "- 분량은 padding이 아니다. 감각, 공간의 작동, 인물 반응, 선택의 압력, 작은 후과가 한 턴 안에서 최소 한 번씩 지나가야 한다.",
-    "- 서사 레벨이 높아질수록 같은 순간을 더 오래 늘이는 것이 아니라, 행동의 결과가 더 멀리 파급되어야 한다. 장면 안에서 달라진 위치, 관계, 위험, 자원, 조작 가능한 표면의 개수가 늘어나야 한다.",
+    "- 전개 속도와 묘사 밀도는 별개다. 묘사 밀도가 높아도 선택 행동 실행을 뒤로 미루거나 같은 순간을 오래 늘이면 안 된다.",
+    "- 분량은 padding이 아니다. 문단 수보다 행동 완료, 반작용, 후과, 다음 선택면이 우선이다.",
+    "- 선택된 행동은 반드시 전체 문단의 앞 25-30% 안에서 실제로 실행 완료한다. accepted 행동이면 마지막까지 같은 행동을 계속 시도 중인 상태로 남기지 않는다.",
+    "- 한 물리 동작을 3문단 이상 연속 확대하지 않는다. 같은 순간을 더 오래 늘이는 대신 장면 좌표를 앞으로 옮긴다.",
+    "- 위치, 위험, 자원, 관계, 정보, 출구 중 전개 속도 지침이 요구한 축이 실제로 변해야 한다.",
     "- 감각과 은유는 장면의 물리적 변화, 위협의 접근, 선택 가능한 표면을 더 선명하게 할 때만 확장한다. 반복되는 감각어, 신체 부위, 물질, 동작에는 매번 새 위치, 새 거리, 새 위험, 새 비용, 새 선택지 중 하나가 있어야 한다.",
     "- 내면 서술은 판단과 행동을 돕는 만큼만 쓴다. 주인공이 상황을 오래 관조하기보다, 무엇을 알아차렸고 무엇을 선택할 수 있게 되었는지가 드러나야 한다.",
     "- 긴장 장면에서는 외부 압력의 변화가 서술의 중심축이어야 한다. 추적자, 소리, 거리, 빛, 지형, 출구, 자원 같은 요소가 실제로 움직이거나 달라져야 한다.",
@@ -593,6 +607,7 @@ async function main() {
         libraryOutlineCount: currentForm.readingPacket.libraryOutline.length,
         sentLibraryOutlineCount: authorLibraryOutlineCount(currentForm),
         narrativeLevel: currentForm.readingPacket.narrativeLevel ?? 2,
+        detailLevel: currentForm.readingPacket.detailLevel ?? 2,
         autoCgEnabled: currentForm.readingPacket.autoCgEnabled !== false,
         conversationId: existingConversationId,
         previousConversationUrl
@@ -672,6 +687,7 @@ async function main() {
           libraryOutlineCount: currentForm.readingPacket.libraryOutline.length,
           sentLibraryOutlineCount: authorLibraryOutlineCount(currentForm),
           narrativeLevel: currentForm.readingPacket.narrativeLevel ?? 2,
+          detailLevel: currentForm.readingPacket.detailLevel ?? 2,
           autoCgEnabled: currentForm.readingPacket.autoCgEnabled !== false,
           conversationId: null,
           previousConversationUrl: previousConversationUrl ?? (rawConversationId ? `https://chatgpt.com/c/${rawConversationId}` : null)

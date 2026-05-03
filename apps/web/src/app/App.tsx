@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { defaultCgStylePrompt } from "../../../../packages/core/src/index.js";
-import type { CgAssetRecord, CgReferenceBoardKind, LibraryDocKind, NarrativeLevel, StoryInterface } from "../../../../packages/core/src/index.js";
+import type { CgAssetRecord, CgReferenceBoardKind, DetailLevel, LibraryDocKind, NarrativeLevel, StoryInterface } from "../../../../packages/core/src/index.js";
 import type { WebgptConversationMode } from "../api/client.js";
 import { docLabelFor, saveLabelFor, useVNStore } from "../state/useVNStore.js";
 
@@ -61,9 +61,15 @@ const cgBoardKindLabels: Record<CgReferenceBoardKind, string> = {
 const cgBoardKinds = Object.keys(cgBoardKindLabels) as CgReferenceBoardKind[];
 const narrativeLevels = [1, 2, 3] as const;
 const narrativeLevelLabels: Record<NarrativeLevel, string> = {
-  1: "가까운 반응",
-  2: "결과와 여파",
-  3: "연쇄 진행"
+  1: "느림",
+  2: "보통",
+  3: "빠름"
+};
+const detailLevels = [1, 2, 3] as const;
+const detailLevelLabels: Record<DetailLevel, string> = {
+  1: "간결",
+  2: "표준",
+  3: "풍부"
 };
 
 function parseSubmission(text: string): unknown {
@@ -436,7 +442,7 @@ function ReaderScreen(props: {
   onCreateSave: (label: string) => Promise<void>;
   onLoadSave: (saveId: string) => Promise<void>;
   onLinkWebgptSession: (url: string) => Promise<void>;
-  onUpdateSessionSettings: (input: { autoCgEnabled?: boolean; narrativeLevel?: NarrativeLevel }) => Promise<void>;
+  onUpdateSessionSettings: (input: { autoCgEnabled?: boolean; narrativeLevel?: NarrativeLevel; detailLevel?: DetailLevel }) => Promise<void>;
   onRequestWebgptTurn: (options?: { conversationMode?: WebgptConversationMode }) => Promise<void>;
   onPrepareCgAsset: (options?: { conversationMode?: WebgptConversationMode }) => Promise<void>;
   onRetryCgJob: (options?: { conversationMode?: WebgptConversationMode }) => Promise<void>;
@@ -628,8 +634,8 @@ function ReaderScreen(props: {
               />
               <span>자동 CG</span>
             </label>
-            <div className="narrative-level-control" aria-label="서사 레벨">
-              <span>서사</span>
+            <div className="narrative-level-control" aria-label="전개 속도">
+              <span>전개</span>
               <div className="narrative-level-slider" data-level={props.state.session.narrativeLevel}>
                 <span className="narrative-level-thumb" aria-hidden="true" />
                 {narrativeLevels.map((level) => (
@@ -637,10 +643,29 @@ function ReaderScreen(props: {
                     key={level}
                     className={props.state.session.narrativeLevel === level ? "is-active" : undefined}
                     type="button"
-                    aria-label={`서사 레벨 ${level}: ${narrativeLevelLabels[level]}`}
+                    aria-label={`전개 속도 ${level}: ${narrativeLevelLabels[level]}`}
                     aria-pressed={props.state.session.narrativeLevel === level}
                     disabled={props.loading || webgptRunning}
                     onClick={() => void props.onUpdateSessionSettings({ narrativeLevel: level })}
+                  >
+                    <span>{level}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="narrative-level-control" aria-label="묘사 밀도">
+              <span>묘사</span>
+              <div className="narrative-level-slider" data-level={props.state.session.detailLevel}>
+                <span className="narrative-level-thumb" aria-hidden="true" />
+                {detailLevels.map((level) => (
+                  <button
+                    key={level}
+                    className={props.state.session.detailLevel === level ? "is-active" : undefined}
+                    type="button"
+                    aria-label={`묘사 밀도 ${level}: ${detailLevelLabels[level]}`}
+                    aria-pressed={props.state.session.detailLevel === level}
+                    disabled={props.loading || webgptRunning}
+                    onClick={() => void props.onUpdateSessionSettings({ detailLevel: level })}
                   >
                     <span>{level}</span>
                   </button>
@@ -1257,7 +1282,7 @@ function NarrativeLog(props: {
             const excerpt = compactExcerpt(story.concreteDelta || story.scene.background || story.scene.mood, fallback);
             return (
               <li key={turn.id} className={isCurrent ? "is-current" : undefined}>
-                <details className="narrative-log-turn">
+                <details className="narrative-log-turn" open={isCurrent || undefined}>
                   <summary aria-current={isCurrent ? "step" : undefined}>
                     <span className="narrative-turn-index">#{turn.index + 1}</span>
                     <span className="narrative-turn-meta">

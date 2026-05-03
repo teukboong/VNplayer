@@ -1,5 +1,5 @@
 import { connectorToolNames, type ConnectorToolName } from "../../../packages/connector/src/index.js";
-import type { CgReferenceBoardKind, LibraryDocKind, LibraryDocScope, LibraryDocStatus, NarrativeLevel, ToolResult } from "../../../packages/core/src/index.js";
+import type { CgReferenceBoardKind, DetailLevel, LibraryDocKind, LibraryDocScope, LibraryDocStatus, NarrativeLevel, ToolResult } from "../../../packages/core/src/index.js";
 import type { ListLibraryOutlineOptions, Repository, UpsertLibraryDocInput } from "./repository.js";
 import { RepositoryError } from "./repository.js";
 
@@ -51,8 +51,21 @@ function optionalNarrativeLevel(args: Record<string, unknown>): NarrativeLevel |
   if (value === 1 || value === 2 || value === 3) {
     return value;
   }
-  throw new RepositoryError("invalid_tool_arguments", "잘못된 서사 레벨입니다.", [
-    { path: "narrativeLevel", message: "narrativeLevel은 1, 2, 3 중 하나여야 합니다." }
+  throw new RepositoryError("invalid_tool_arguments", "잘못된 전개 속도입니다.", [
+    { path: "narrativeLevel", message: "narrativeLevel은 전개 속도이며 1, 2, 3 중 하나여야 합니다." }
+  ]);
+}
+
+function optionalDetailLevel(args: Record<string, unknown>): DetailLevel | undefined {
+  const value = args.detailLevel;
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === 1 || value === 2 || value === 3) {
+    return value;
+  }
+  throw new RepositoryError("invalid_tool_arguments", "잘못된 묘사 밀도입니다.", [
+    { path: "detailLevel", message: "detailLevel은 1, 2, 3 중 하나여야 합니다." }
   ]);
 }
 
@@ -360,13 +373,15 @@ export function createConnectorTools(repository: Repository, events: ConnectorTo
         case "vn_update_session_settings": {
           const autoCgEnabled = optionalBoolean(args, "autoCgEnabled");
           const narrativeLevel = optionalNarrativeLevel(args);
+          const detailLevel = optionalDetailLevel(args);
           return {
             ok: true,
             session: repository.updateSessionSettings({
               worldId: requiredString(args, "worldId"),
               sessionId: requiredString(args, "sessionId"),
               ...(autoCgEnabled === undefined ? {} : { autoCgEnabled }),
-              ...(narrativeLevel === undefined ? {} : { narrativeLevel })
+              ...(narrativeLevel === undefined ? {} : { narrativeLevel }),
+              ...(detailLevel === undefined ? {} : { detailLevel })
             })
           };
         }

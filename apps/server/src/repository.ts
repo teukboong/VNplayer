@@ -5,6 +5,7 @@ import type {
   CgAssetRecord,
   CgReferenceBoardKind,
   CgReferenceBoardRecord,
+  DetailLevel,
   DisplayShape,
   LibraryDocKind,
   LibraryDocMetadata,
@@ -70,6 +71,11 @@ function boolFromDb(value: unknown): boolean {
 }
 
 function narrativeLevelFromDb(value: unknown): NarrativeLevel {
+  const level = Number(value);
+  return level === 1 || level === 3 ? level : 2;
+}
+
+function detailLevelFromDb(value: unknown): DetailLevel {
   const level = Number(value);
   return level === 1 || level === 3 ? level : 2;
 }
@@ -202,6 +208,7 @@ function mapSession(row: UnknownRow): SessionRecord {
     cgWebgptConversationId: nullableString(row.cgWebgptConversationId),
     autoCgEnabled: row.autoCgEnabled === undefined ? true : boolFromDb(row.autoCgEnabled),
     narrativeLevel: narrativeLevelFromDb(row.narrativeLevel),
+    detailLevel: detailLevelFromDb(row.detailLevel),
     createdAt: requireString(row.createdAt, "createdAt"),
     updatedAt: requireString(row.updatedAt, "updatedAt")
   };
@@ -501,6 +508,7 @@ export type UpdateSessionSettingsInput = {
   sessionId: string;
   autoCgEnabled?: boolean;
   narrativeLevel?: NarrativeLevel;
+  detailLevel?: DetailLevel;
 };
 
 export type UpdateWorldTitleInput = {
@@ -815,6 +823,7 @@ export function createRepository(db: DatabaseSync) {
         `SELECT id, world_id AS worldId, label, webgpt_session_url AS webgptSessionUrl,
                 cg_webgpt_conversation_id AS cgWebgptConversationId,
                 auto_cg_enabled AS autoCgEnabled, narrative_level AS narrativeLevel,
+                detail_level AS detailLevel,
                 created_at AS createdAt, updated_at AS updatedAt, active_turn_id AS activeTurnId
            FROM sessions WHERE id = ?`
       )
@@ -1982,12 +1991,13 @@ export function createRepository(db: DatabaseSync) {
     }
     const autoCgEnabled = input.autoCgEnabled ?? session.autoCgEnabled;
     const narrativeLevel = input.narrativeLevel ?? session.narrativeLevel;
+    const detailLevel = input.detailLevel ?? session.detailLevel;
     const updatedAt = nowIso();
     db.prepare(
       `UPDATE sessions
-          SET auto_cg_enabled = ?, narrative_level = ?, updated_at = ?
+          SET auto_cg_enabled = ?, narrative_level = ?, detail_level = ?, updated_at = ?
         WHERE id = ?`
-    ).run(autoCgEnabled ? 1 : 0, narrativeLevel, updatedAt, input.sessionId);
+    ).run(autoCgEnabled ? 1 : 0, narrativeLevel, detailLevel, updatedAt, input.sessionId);
     db.prepare(`UPDATE worlds SET updated_at = ? WHERE id = ?`).run(updatedAt, input.worldId);
     return getSession(input.sessionId);
   }
@@ -2242,8 +2252,8 @@ export function createRepository(db: DatabaseSync) {
       );
       db.prepare(
         `INSERT INTO sessions
-          (id, world_id, label, webgpt_session_url, cg_webgpt_conversation_id, auto_cg_enabled, narrative_level, created_at, updated_at, active_turn_id)
-         VALUES (?, ?, ?, NULL, NULL, 1, 2, ?, ?, NULL)`
+          (id, world_id, label, webgpt_session_url, cg_webgpt_conversation_id, auto_cg_enabled, narrative_level, detail_level, created_at, updated_at, active_turn_id)
+         VALUES (?, ?, ?, NULL, NULL, 1, 2, 2, ?, ?, NULL)`
       ).run(sessionId, id, "메인 세션", createdAt, createdAt);
       insertInitialLibraryDocs({
         worldId: id,

@@ -133,6 +133,7 @@ export type WorldStartRequest = {
 export type WorldTitleStatus = "provisional" | "named" | "locked";
 export type WorldTitleSource = "seed" | "fallback" | "webgpt" | "user";
 export type NarrativeLevel = 1 | 2 | 3;
+export type DetailLevel = 1 | 2 | 3;
 
 export type WorldRecord = {
   id: string;
@@ -159,6 +160,7 @@ export type SessionRecord = {
   cgWebgptConversationId?: string | null;
   autoCgEnabled: boolean;
   narrativeLevel: NarrativeLevel;
+  detailLevel: DetailLevel;
   createdAt: string;
   updatedAt: string;
 };
@@ -351,6 +353,7 @@ export type VisibleReadingPacket = {
   webgptSessionUrl?: string | null;
   autoCgEnabled: boolean;
   narrativeLevel: NarrativeLevel;
+  detailLevel: DetailLevel;
 };
 
 export type VisibleTurnForm = {

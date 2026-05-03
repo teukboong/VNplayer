@@ -2351,18 +2351,89 @@ select:focus {
 }
 
 .reader-content.is-log-open {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(286px, 320px);
+  align-items: start;
 }
 
-.reader-content.is-log-open .story-pane,
-.reader-content.is-log-open .choice-pane {
-  grid-column: 1 / -1;
+.story-pane.is-log-open {
+  display: grid;
+  grid-template-columns: minmax(250px, 0.34fr) minmax(0, 0.66fr);
+  grid-template-areas:
+    "current log"
+    "interface log"
+    "action log";
+  gap: 14px 18px;
+  align-items: start;
+}
+
+.story-pane.is-log-open .prose-block,
+.story-pane.is-log-open .empty-turn {
+  grid-area: current;
+  margin: 0;
+}
+
+.story-pane.is-log-open .prose-block {
+  max-height: min(42vh, 380px);
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  background: rgba(238, 238, 238, 0.018);
+  color: rgba(238, 238, 238, 0.82);
+  font-size: 0.94rem;
+  line-height: 1.62;
+}
+
+.story-pane.is-log-open .prose-block > p {
+  text-indent: 0.9em;
+}
+
+.story-pane.is-log-open .inline-cg-frame,
+.story-pane.is-log-open .turn-cg-control {
+  display: none;
+}
+
+.story-pane.is-log-open .turn-interface {
+  grid-area: interface;
+  margin: 0;
+}
+
+.story-pane.is-log-open .narrative-log {
+  grid-area: log;
+  align-self: stretch;
+  min-height: min(64vh, 680px);
+  margin: 0;
+  padding: 0 14px 14px;
+  border: 1px solid rgba(238, 238, 238, 0.14);
+  background:
+    linear-gradient(180deg, rgba(238, 238, 238, 0.028), rgba(238, 238, 238, 0.01)),
+    rgba(2, 5, 8, 0.46);
+}
+
+.story-pane.is-log-open .narrative-log > summary {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  min-height: 50px;
+  border-bottom: 1px solid var(--line-soft);
+  background: rgba(5, 8, 12, 0.96);
+}
+
+.story-pane.is-log-open .narrative-log[open] .narrative-log-list {
+  max-height: min(68vh, 760px);
+  padding: 10px 4px 0 0;
+}
+
+.story-pane.is-log-open .action-strip {
+  grid-area: action;
+  margin: 0;
 }
 
 .reader-content.is-log-open .choice-pane {
-  border-left: 0;
-  border-top: 1px solid var(--line-soft);
-  padding: 12px 0 0;
+  position: sticky;
+  top: 0;
+  max-height: min(72vh, 760px);
+  overflow: auto;
+  border-left: 1px solid var(--line-soft);
+  padding: 12px 0 12px 14px;
 }
 
 .choice-pane {
@@ -2528,6 +2599,27 @@ a:focus-visible {
   .reader-content {
     grid-template-columns: minmax(0, 1fr) minmax(276px, 310px);
   }
+
+  .reader-content.is-log-open {
+    grid-template-columns: minmax(0, 1fr) minmax(270px, 300px);
+  }
+
+  .story-pane.is-log-open {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "log"
+      "current"
+      "interface"
+      "action";
+  }
+
+  .story-pane.is-log-open .narrative-log {
+    min-height: auto;
+  }
+
+  .story-pane.is-log-open .narrative-log[open] .narrative-log-list {
+    max-height: min(62vh, 700px);
+  }
 }
 
 @media (max-width: 720px) {
@@ -2637,7 +2729,25 @@ a:focus-visible {
     gap: 12px;
   }
 
+  .reader-content.is-log-open {
+    grid-template-columns: 1fr;
+  }
+
+  .reader-content.is-log-open .choice-pane {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    border-left: 0;
+    border-top: 1px solid var(--line-soft);
+    padding: 12px 0 0;
+  }
+
   .prose-block {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .story-pane.is-log-open .prose-block {
     max-height: none;
     overflow: visible;
   }

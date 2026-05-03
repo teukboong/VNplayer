@@ -3,6 +3,7 @@ import type {
   CgAssetRecord,
   CgReferenceBoardKind,
   CgReferenceBoardRecord,
+  DetailLevel,
   DisplayabilityWarning,
   LibraryDocKind,
   LibraryDocVersion,
@@ -42,7 +43,7 @@ type StoreState = {
   createSave: (label: string) => Promise<void>;
   loadSave: (saveId: string) => Promise<void>;
   linkWebgptSession: (url: string) => Promise<void>;
-  updateSessionSettings: (input: { autoCgEnabled?: boolean; narrativeLevel?: NarrativeLevel }) => Promise<void>;
+  updateSessionSettings: (input: { autoCgEnabled?: boolean; narrativeLevel?: NarrativeLevel; detailLevel?: DetailLevel }) => Promise<void>;
   requestWebgptTurn: (options?: { conversationMode?: WebgptConversationMode }) => Promise<void>;
   prepareCgAsset: (options?: { conversationMode?: WebgptConversationMode }) => Promise<void>;
   retryCgJob: (options?: { conversationMode?: WebgptConversationMode }) => Promise<void>;
@@ -322,7 +323,8 @@ export const useVNStore = create<StoreState>((set, get) => ({
           session: {
             ...previousReaderState.session,
             ...(input.autoCgEnabled === undefined ? {} : { autoCgEnabled: input.autoCgEnabled }),
-            ...(input.narrativeLevel === undefined ? {} : { narrativeLevel: input.narrativeLevel })
+            ...(input.narrativeLevel === undefined ? {} : { narrativeLevel: input.narrativeLevel }),
+            ...(input.detailLevel === undefined ? {} : { detailLevel: input.detailLevel })
           }
         }
       });

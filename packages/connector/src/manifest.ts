@@ -509,7 +509,7 @@ export const connectorToolDefinitions: ConnectorToolDefinition[] = [
   {
     name: "vn_update_session_settings",
     title: "세션 작성 설정 저장",
-    description: "현재 세션의 자동 CG 생성 여부와 서사 레벨을 저장한다.",
+    description: "현재 세션의 자동 CG 생성 여부, 전개 속도, 묘사 밀도를 저장한다.",
     storyBoundary: "작성 설정만 저장한다. 산문, 선택지, canon, 세계 법칙을 만들거나 바꾸면 안 된다.",
     inputSchema: {
       type: "object",
@@ -523,7 +523,11 @@ export const connectorToolDefinitions: ConnectorToolDefinition[] = [
         },
         narrativeLevel: {
           type: "number",
-          description: "1, 2, 3 중 하나. 높을수록 한 선택을 더 많은 장면 beat로 자연스럽게 진행한다."
+          description: "1, 2, 3 중 하나. 전개 속도다. 높을수록 한 선택을 더 많은 장면 beat로 진행하고 장면 좌표를 더 멀리 옮긴다."
+        },
+        detailLevel: {
+          type: "number",
+          description: "1, 2, 3 중 하나. 묘사 밀도다. 높을수록 문장과 감각 묘사가 풍부해지지만 전개 속도를 늦추지는 않는다."
         }
       },
       required: ["worldId", "sessionId"]
