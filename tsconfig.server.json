@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": ".",
+    "outDir": "dist/server",
+    "types": ["node"],
+    "allowImportingTsExtensions": false
+  },
+  "include": ["apps/server/src", "packages/core/src", "packages/connector/src"]
+}

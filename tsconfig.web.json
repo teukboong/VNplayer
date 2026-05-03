@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "types": ["vite/client"]
+  },
+  "include": [
+    "apps/web/src",
+    "packages/core/src",
+    "packages/connector/src",
+    "vite.config.ts",
+    "playwright.config.ts"
+  ]
+}

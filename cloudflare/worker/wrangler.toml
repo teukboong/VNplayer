@@ -1,0 +1,9 @@
+name = "vnplayer-frontdoor"
+main = "src/index.js"
+compatibility_date = "2026-05-02"
+
+workers_dev = true
+
+[[kv_namespaces]]
+binding = "VNPLAYER_KV"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
