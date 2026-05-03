@@ -117,6 +117,72 @@ export type DisplayabilityWarning = {
   path?: string;
 };
 
+export type CadenceTransitionHint =
+  | "exit_or_boundary_cross"
+  | "opponent_state_change"
+  | "irreversible_cost"
+  | "new_information"
+  | "relationship_shift"
+  | "tool_or_surface_change";
+
+export type CadencePressure = {
+  hasPressure: boolean;
+  sameLocationCount: number;
+  sameOpponentPressureCount: number;
+  sameGoalCount: number;
+  sameSurfaceRepeatCount: number;
+  unresolvedOpenThreadCount: number;
+  duplicateOpenThreadFamilies: string[];
+  requiredTransitionHint?: CadenceTransitionHint | null;
+  reasons: string[];
+  promptNote?: string | null;
+};
+
+export type TurnIntent = {
+  latestPlayerAction: PlayerAction | null;
+  narrativeLevel: NarrativeLevel;
+  detailLevel: DetailLevel;
+  directObjective?: string | null;
+};
+
+export type VisibleContextItem = {
+  kind: "history" | "library_doc" | "library_outline" | "cadence_pressure";
+  id: string;
+  reason: string;
+};
+
+export type VisibleContextPackage = {
+  visibleHistory: StoryTurn[];
+  activeLibraryDocs: LibraryDocVersion[];
+  libraryOutline: LibraryDocOutlineItem[];
+  cadencePressure: CadencePressure;
+  traceItems: VisibleContextItem[];
+};
+
+export type AuthorRuleStack = {
+  l1: string[];
+  l2: string[];
+  l3: string[];
+  l4: string[];
+};
+
+export type AuthorInputTrace = {
+  compiledAt: string;
+  historyTurnsIncluded: number;
+  historyTurnsOmitted: number;
+  activeLibraryDocsIncluded: number;
+  libraryOutlineItemsIncluded: number;
+  contextItems: VisibleContextItem[];
+  ruleStack: AuthorRuleStack;
+};
+
+export type AuthorInputSnapshot = {
+  turnIntent: TurnIntent;
+  visibleContextPackage: VisibleContextPackage;
+  ruleStack: AuthorRuleStack;
+  trace: AuthorInputTrace;
+};
+
 export type DisplayShape = {
   turn: StoryTurn;
   warnings: DisplayabilityWarning[];
@@ -354,6 +420,10 @@ export type VisibleReadingPacket = {
   autoCgEnabled: boolean;
   narrativeLevel: NarrativeLevel;
   detailLevel: DetailLevel;
+  turnIntent: TurnIntent;
+  cadencePressure: CadencePressure;
+  authorInputTrace: AuthorInputTrace;
+  authorRuleStack: AuthorRuleStack;
 };
 
 export type VisibleTurnForm = {

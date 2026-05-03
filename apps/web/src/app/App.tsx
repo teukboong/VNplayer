@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { defaultCgStylePrompt } from "../../../../packages/core/src/index.js";
-import type { CgAssetRecord, CgReferenceBoardKind, DetailLevel, LibraryDocKind, NarrativeLevel, StoryInterface } from "../../../../packages/core/src/index.js";
+import type {
+  AuthorInputTrace,
+  CadencePressure,
+  CgAssetRecord,
+  CgReferenceBoardKind,
+  DetailLevel,
+  LibraryDocKind,
+  NarrativeLevel,
+  StoryInterface
+} from "../../../../packages/core/src/index.js";
 import type { WebgptConversationMode } from "../api/client.js";
 import { docLabelFor, saveLabelFor, useVNStore } from "../state/useVNStore.js";
 
@@ -1058,6 +1067,11 @@ function ReaderScreen(props: {
               </div>
             </section>
 
+            <AuthorDiagnostics
+              cadencePressure={props.state.form.readingPacket.cadencePressure}
+              trace={props.state.form.readingPacket.authorInputTrace}
+            />
+
             <section className="panel compact">
               <div className="section-title">
                 <p className="eyebrow">가시 턴 양식</p>
@@ -1371,5 +1385,58 @@ function WarningList(props: { warnings: Array<{ code: string; message: string; p
         </p>
       ))}
     </div>
+  );
+}
+
+function AuthorDiagnostics(props: { cadencePressure: CadencePressure; trace: AuthorInputTrace }) {
+  const pressure = props.cadencePressure;
+  const traceKinds = props.trace.contextItems.reduce<Record<string, number>>((counts, item) => {
+    counts[item.kind] = (counts[item.kind] ?? 0) + 1;
+    return counts;
+  }, {});
+  return (
+    <section className="panel compact" aria-label="작성 입력 진단">
+      <div className="section-title">
+        <p className="eyebrow">작성 입력</p>
+        <h3>{pressure.hasPressure ? "반복 압력 감지" : "반복 압력 없음"}</h3>
+      </div>
+      <div className="status-grid">
+        <div className="status-row">
+          <span>히스토리</span>
+          <strong>
+            {props.trace.historyTurnsIncluded} / 생략 {props.trace.historyTurnsOmitted}
+          </strong>
+        </div>
+        <div className="status-row">
+          <span>문서 본문</span>
+          <strong>{props.trace.activeLibraryDocsIncluded}</strong>
+        </div>
+        <div className="status-row">
+          <span>목록</span>
+          <strong>{props.trace.libraryOutlineItemsIncluded}</strong>
+        </div>
+        <div className="status-row">
+          <span>전환 압력</span>
+          <strong>{pressure.requiredTransitionHint ?? "없음"}</strong>
+        </div>
+      </div>
+      <div className="scan-list">
+        <div className="scan-row">
+          <strong>반복 신호</strong>
+          <span>
+            위치 {pressure.sameLocationCount} · 압박 {pressure.sameOpponentPressureCount} · 표면 {pressure.sameSurfaceRepeatCount}
+          </span>
+          {pressure.reasons.length ? <p>{pressure.reasons.join(", ")}</p> : <p>작성 lane에 별도 교착 압력을 보내지 않습니다.</p>}
+        </div>
+        <div className="scan-row">
+          <strong>trace</strong>
+          <span>
+            history {traceKinds.history ?? 0} · docs {traceKinds.library_doc ?? 0} · outline {traceKinds.library_outline ?? 0} · cadence{" "}
+            {traceKinds.cadence_pressure ?? 0}
+          </span>
+          <p>{props.trace.contextItems.slice(0, 4).map((item) => `${item.kind}: ${item.reason}`).join(" / ")}</p>
+        </div>
+      </div>
+    </section>
   );
 }

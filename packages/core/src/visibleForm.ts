@@ -1,4 +1,5 @@
 import type {
+  AuthorInputSnapshot,
   LibraryDocVersion,
   LibraryDocOutlineItem,
   PlayerAction,
@@ -7,6 +8,7 @@ import type {
   VisibleTurnForm,
   WorldRecord
 } from "./types.js";
+import { compileAuthorInput } from "./authorInputCompiler.js";
 
 type BuildVisibleTurnFormInput = {
   world: WorldRecord;
@@ -70,7 +72,20 @@ function detailLevelInstruction(level: 1 | 2 | 3): string {
   ].join(" ");
 }
 
+function worldNamingInstruction(world: WorldRecord): string {
+  if (world.titleStatus === "provisional" && !world.titleLocked) {
+    return "readingPacket.worldTitleStatus가 provisional이고 세계 이름이 아직 덜 잡혔다고 판단되면 첫 1-2턴 안에 StoryTurn.worldNaming으로 제목 후보를 제안할 수 있습니다. 제목은 본문에 설명하지 말고 metadata로만 넣어 주세요. 숨은 진실, 미공개 반전, 이후에만 드러날 고유명은 제목 후보에 포함하지 마세요.";
+  }
+  return "세계 이름은 이미 확정 또는 비임시 상태입니다. StoryTurn.worldNaming을 작성하지 마세요.";
+}
+
+function cadenceInstruction(compiled: AuthorInputSnapshot): string | null {
+  const note = compiled.visibleContextPackage.cadencePressure.promptNote;
+  return note ? `반복 교착 신호: ${note}` : null;
+}
+
 export function buildVisibleTurnForm(input: BuildVisibleTurnFormInput): VisibleTurnForm {
+  const compiled = compileAuthorInput(input);
   return {
     worldId: input.world.id,
     sessionId: input.session.id,
@@ -84,14 +99,18 @@ export function buildVisibleTurnForm(input: BuildVisibleTurnFormInput): VisibleT
       worldSubtitle: input.world.subtitle ?? null,
       worldSeedText: input.world.seedText,
       randomSeedValue: input.world.randomSeedValue ?? null,
-      visibleHistory: input.visibleHistory.map((turn) => turn.displayShape.turn),
+      visibleHistory: compiled.visibleContextPackage.visibleHistory,
       latestPlayerAction: input.latestPlayerAction,
       activeLibraryDocs: input.activeLibraryDocs,
-      libraryOutline: input.libraryOutline,
+      libraryOutline: compiled.visibleContextPackage.libraryOutline,
       webgptSessionUrl: input.session.webgptSessionUrl ?? null,
       autoCgEnabled: input.session.autoCgEnabled,
       narrativeLevel: input.session.narrativeLevel,
-      detailLevel: input.session.detailLevel
+      detailLevel: input.session.detailLevel,
+      turnIntent: compiled.turnIntent,
+      cadencePressure: compiled.visibleContextPackage.cadencePressure,
+      authorInputTrace: compiled.trace,
+      authorRuleStack: compiled.ruleStack
     },
     responseShape: "StoryTurn",
     instruction: [
@@ -108,6 +127,7 @@ export function buildVisibleTurnForm(input: BuildVisibleTurnFormInput): VisibleT
       "동화, 라이트노벨식 친절함, 교훈적인 해설, 감탄사 많은 판타지 내레이션, '무언가 소중한 것을 깨닫습니다' 같은 요약 감정문을 피하세요.",
       narrativeLevelInstruction(input.session.narrativeLevel),
       detailLevelInstruction(input.session.detailLevel),
+      cadenceInstruction(compiled),
       "전개 속도와 묘사 밀도는 별개입니다. 묘사 밀도가 높아도 선택 행동 실행을 뒤로 미루거나 같은 순간을 오래 늘이면 안 됩니다.",
       "전개 속도는 문장 길이나 문단 수가 아니라 상태 변화 주기로 조절하세요. 빠른 전개는 장면을 요약하거나 인과를 건너뛰는 것이 아니라, 선택 행동의 실행, 장면의 반작용, 판세 변화, 작은 보상이나 대가, 다음 선택의 갈고리가 한 턴 안에서 분명히 지나가는 것을 뜻합니다.",
       "핍진성은 유지하세요. 행동이 성립하려면 몸, 시간, 거리, 시야, 도구, 사회적 허락, 세계 법칙 중 필요한 조건이 장면 안에서 충족되어야 합니다. 조건이 부족하면 partial 또는 blocked로 처리하되, 막힌 이유와 후과를 장면 속 변화로 보여 주세요.",
@@ -137,7 +157,7 @@ export function buildVisibleTurnForm(input: BuildVisibleTurnFormInput): VisibleT
       "readingPacket.latestPlayerAction.kind가 freeform이면 그 입력은 명령이 아니라 시도입니다. 얼토당토않은 자유행동까지 그대로 성공시키지 말고, 몸/자원/시간/사회적 허락/지식/세계 법칙/가시성 gate를 통해 장면 안에서 성립 여부를 판단해 주세요.",
       "자유행동이 그대로 성립하면 StoryTurn.actionAdjudication.kind는 accepted, 일부만 성립하면 partial, 성립하지 않으면 blocked로 작성해 주세요. blocked도 시스템 거절문이 아니라 시도가 부딪힌 가시 후과를 본문 장면으로 보여줘야 합니다.",
       "자유행동 판정은 백엔드가 대신 하지 않습니다. actionAdjudication은 판정의 메타데이터이고, 실제 성공/부분 성공/차단의 감각은 scene.paragraphs와 concreteDelta 안에 같이 들어 있어야 합니다.",
-      "readingPacket.worldTitleStatus가 provisional이고 세계 이름이 아직 덜 잡혔다고 판단되면 첫 1-2턴 안에 StoryTurn.worldNaming으로 제목 후보를 제안할 수 있습니다. 제목은 본문에 설명하지 말고 metadata로만 넣어 주세요. 숨은 진실, 미공개 반전, 이후에만 드러날 고유명은 제목 후보에 포함하지 마세요.",
+      worldNamingInstruction(input.world),
       "StoryTurn.libraryUpdates는 필수입니다. 안정적으로 남은 후과는 consequence_note, 조작 가능한 장면 표면은 encounter_surface, 현재 대화 자세는 dialogue_stance, 미해결 질문은 open_thread로 최소 1개, 보통 1-3개를 직접 넣어 주세요. 이것들은 다음 턴 리콜 자료이지 백엔드 장면 계획이 아닙니다.",
       "매 턴 StoryTurn.cgDecision을 반드시 작성해 주세요. cgDecision.decision은 generate 또는 skip입니다. 이것은 이미지 생성 실행이 아니라 병렬 CG lane에 넘길지 고르는 텍스트 메타데이터입니다.",
       input.session.autoCgEnabled

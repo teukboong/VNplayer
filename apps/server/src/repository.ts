@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import { buildVisibleTurnForm, normalizeCgStylePrompt, normalizeStoryTurn } from "../../../packages/core/src/index.js";
+import { analyzePostTurnQuality, buildVisibleTurnForm, normalizeCgStylePrompt, normalizeStoryTurn } from "../../../packages/core/src/index.js";
 import type {
   CgAssetRecord,
   CgReferenceBoardKind,
@@ -177,6 +177,22 @@ function worldTitleSource(value: unknown): WorldTitleSource {
 
 function generateRandomSeed(): string {
   return `seed_${randomUUID().slice(0, 8)}`;
+}
+
+function mergeWarnings(...groups: DisplayShape["warnings"][]): DisplayShape["warnings"] {
+  const seen = new Set<string>();
+  const warnings: DisplayShape["warnings"] = [];
+  for (const group of groups) {
+    for (const warning of group) {
+      const key = `${warning.code}:${warning.path ?? ""}:${warning.message}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      warnings.push(warning);
+    }
+  }
+  return warnings;
 }
 
 function mapWorld(row: UnknownRow): WorldRecord {
@@ -2384,11 +2400,21 @@ export function createRepository(db: DatabaseSync) {
         ]);
       }
 
+      const recentTurns = listVisibleTurns(session).slice(-4).map((turn) => turn.displayShape.turn);
+      const qualityWarnings = analyzePostTurnQuality({
+        turn: normalized.displayShape.turn,
+        recentTurns
+      });
+      const displayShape: DisplayShape = {
+        turn: normalized.displayShape.turn,
+        warnings: mergeWarnings(normalized.displayShape.warnings, qualityWarnings)
+      };
+
       const latestIndexRow = db
         .prepare(`SELECT COALESCE(MAX(turn_index), -1) + 1 AS nextIndex FROM turns WHERE session_id = ?`)
         .get(input.sessionId) as UnknownRow;
       const nextIndex = Number(latestIndexRow.nextIndex);
-      const displayShapeJson = JSON.stringify(normalized.displayShape);
+      const displayShapeJson = JSON.stringify(displayShape);
 
       db.prepare(
         `INSERT INTO turns
@@ -2405,7 +2431,7 @@ export function createRepository(db: DatabaseSync) {
         receivedAt
       );
 
-      for (const warning of normalized.displayShape.warnings) {
+      for (const warning of displayShape.warnings) {
         db.prepare(
           `INSERT INTO displayability_warnings
             (id, turn_id, raw_submission_id, code, message, path, created_at)
@@ -2429,7 +2455,7 @@ export function createRepository(db: DatabaseSync) {
           index: nextIndex,
           playerActionId: latestPlayerAction?.id ?? null,
           rawSubmissionId,
-          displayShape: normalized.displayShape,
+          displayShape,
           createdAt: receivedAt
         },
         suppliedLibraryDocs,
@@ -2443,22 +2469,22 @@ export function createRepository(db: DatabaseSync) {
           index: nextIndex,
           playerActionId: latestPlayerAction?.id ?? null,
           rawSubmissionId,
-          displayShape: normalized.displayShape,
+          displayShape,
           createdAt: receivedAt
         },
         receivedAt
       );
-      if (normalized.displayShape.turn.worldNaming) {
+      if (displayShape.turn.worldNaming) {
         recordWorldNamingProposal({
           worldId: input.worldId,
           sessionId: input.sessionId,
           turnId,
           turnIndex: nextIndex,
-          proposal: normalized.displayShape.turn.worldNaming,
+          proposal: displayShape.turn.worldNaming,
           createdAt: receivedAt
         });
       }
-      if (session.autoCgEnabled && normalized.displayShape.turn.cgRequest?.shouldGenerate) {
+      if (session.autoCgEnabled && displayShape.turn.cgRequest?.shouldGenerate) {
         prepareCgAssetForTurn({
           worldId: input.worldId,
           sessionId: input.sessionId,
@@ -2469,7 +2495,7 @@ export function createRepository(db: DatabaseSync) {
       db.prepare(`UPDATE sessions SET active_turn_id = ?, updated_at = ? WHERE id = ?`).run(turnId, receivedAt, input.sessionId);
       db.prepare(`UPDATE worlds SET updated_at = ? WHERE id = ?`).run(receivedAt, input.worldId);
       db.exec("COMMIT");
-      return { turnId, warnings: normalized.displayShape.warnings };
+      return { turnId, warnings: displayShape.warnings };
     } catch (error) {
       try {
         db.exec("ROLLBACK");

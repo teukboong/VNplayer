@@ -722,7 +722,9 @@ test("world entry, turn steering, restore metadata, and existing-world loading",
     source: "llm",
     turn: firstTurn
   });
-  expect(firstSubmit.warnings.map((warning) => warning.code)).toEqual(expect.arrayContaining(["short_scene_paragraphs", "short_scene_text"]));
+  expect(firstSubmit.warnings.map((warning) => warning.code)).toEqual(
+    expect.arrayContaining(["short_scene_paragraphs", "short_scene_text", "post_turn_macro_delta_missing"])
+  );
 
   const readingSurface = page.getByLabel("읽기 화면");
   await expect(readingSurface.locator(".prose-block").getByText("The archive room opens onto rain-bright glass")).toBeVisible();
@@ -740,6 +742,16 @@ test("world entry, turn steering, restore metadata, and existing-world loading",
         latestPlayerAction: { text: string } | null;
         activeLibraryDocs: Array<{ docId: string; title: string; pinned?: boolean }>;
         libraryOutline: Array<{ docId: string; kind: string; title: string; status: string; scope: string; tags: string[] }>;
+        visibleHistory: Array<{
+          interface?: unknown;
+          cgDecision?: unknown;
+          libraryUpdates?: unknown;
+          scene: { paragraphs: string[] };
+          concreteDelta?: string | null;
+        }>;
+        turnIntent: { narrativeLevel: number; detailLevel: number; directObjective?: string | null };
+        cadencePressure: { hasPressure: boolean; sameLocationCount: number; reasons: string[] };
+        authorInputTrace: { historyTurnsIncluded: number; activeLibraryDocsIncluded: number; contextItems: Array<{ kind: string; reason: string }> };
       };
       responseShape: string;
     };
@@ -751,6 +763,13 @@ test("world entry, turn steering, restore metadata, and existing-world loading",
   expect(formAfterChoice.form.readingPacket.activeLibraryDocs.some((doc) => doc.docId === docResult.docId && doc.pinned)).toBe(true);
   expect(formAfterChoice.form.readingPacket.libraryOutline.some((doc) => doc.docId === ruleResult.docId && doc.kind === "world_rule")).toBe(true);
   expect(formAfterChoice.form.readingPacket.libraryOutline.some((doc) => doc.kind === "encounter_surface" && doc.tags.includes("surface"))).toBe(true);
+  expect(formAfterChoice.form.readingPacket.visibleHistory[0]?.interface).toBeUndefined();
+  expect(formAfterChoice.form.readingPacket.visibleHistory[0]?.cgDecision).toBeUndefined();
+  expect(formAfterChoice.form.readingPacket.visibleHistory[0]?.libraryUpdates).toBeUndefined();
+  expect(formAfterChoice.form.readingPacket.turnIntent.directObjective).toContain("Walk toward the green desk lamp");
+  expect(formAfterChoice.form.readingPacket.authorInputTrace.historyTurnsIncluded).toBe(1);
+  expect(formAfterChoice.form.readingPacket.authorInputTrace.activeLibraryDocsIncluded).toBeGreaterThan(0);
+  expect(formAfterChoice.form.readingPacket.authorInputTrace.contextItems.some((item) => item.kind === "history")).toBe(true);
 
   const sessionSettings = await callTool<{
     ok: true;
@@ -1042,7 +1061,18 @@ test("world entry, turn steering, restore metadata, and existing-world loading",
   const rainArchive = await getWorld(page, worldTitle);
   expect(rainArchive.hasWebgptSessionUrl).toBe(true);
 
-  const formBody = await callTool<{ ok: true; form: { responseShape: string; readingPacket: { worldSeedText: string } } }>(
+  const formBody = await callTool<{
+    ok: true;
+    form: {
+      responseShape: string;
+      instruction: string;
+      readingPacket: {
+        worldSeedText: string;
+        cadencePressure: { hasPressure: boolean; sameLocationCount: number; requiredTransitionHint?: string | null };
+        authorInputTrace: { contextItems: Array<{ kind: string; reason: string }> };
+      };
+    };
+  }>(
     page,
     "vn_get_current_form",
     {
@@ -1052,6 +1082,10 @@ test("world entry, turn steering, restore metadata, and existing-world loading",
   );
   expect(formBody.form.responseShape).toBe("StoryTurn");
   expect(formBody.form.readingPacket.worldSeedText).toContain(worldTitle);
+  expect(formBody.form.readingPacket.cadencePressure.hasPressure).toBe(true);
+  expect(formBody.form.readingPacket.cadencePressure.sameLocationCount).toBeGreaterThanOrEqual(2);
+  expect(formBody.form.readingPacket.authorInputTrace.contextItems.some((item) => item.kind === "cadence_pressure")).toBe(true);
+  expect(formBody.form.instruction).toContain("반복 교착 신호");
 
   await callTool(page, "vn_submit_turn", {
     worldId: rainArchive.worldId,
