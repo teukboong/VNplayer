@@ -777,6 +777,7 @@ test("world entry, turn steering, restore metadata, and existing-world loading",
   expect(formAfterSettings.form.readingPacket.detailLevel).toBe(1);
   expect(formAfterSettings.form.instruction).toContain("전개 속도는 3, 빠름입니다.");
   expect(formAfterSettings.form.instruction).toContain("묘사 밀도는 1, 간결입니다.");
+  expect(formAfterSettings.form.instruction).toContain("윤문에서는 물리적 인과와 독자의 방향감을 우선하세요.");
 
   await callTool(page, "vn_receive_visible_turn_v2", {
     worldId: createdWorld.worldId,
