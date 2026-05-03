@@ -629,7 +629,7 @@ function ReaderScreen(props: {
               <input
                 type="checkbox"
                 checked={props.state.session.autoCgEnabled}
-                disabled={props.loading || webgptRunning}
+                disabled={props.loading}
                 onChange={(event) => void props.onUpdateSessionSettings({ autoCgEnabled: event.target.checked })}
               />
               <span>자동 CG</span>
@@ -645,7 +645,7 @@ function ReaderScreen(props: {
                     type="button"
                     aria-label={`전개 속도 ${level}: ${narrativeLevelLabels[level]}`}
                     aria-pressed={props.state.session.narrativeLevel === level}
-                    disabled={props.loading || webgptRunning}
+                    disabled={props.loading}
                     onClick={() => void props.onUpdateSessionSettings({ narrativeLevel: level })}
                   >
                     <span>{level}</span>
@@ -664,7 +664,7 @@ function ReaderScreen(props: {
                     type="button"
                     aria-label={`묘사 밀도 ${level}: ${detailLevelLabels[level]}`}
                     aria-pressed={props.state.session.detailLevel === level}
-                    disabled={props.loading || webgptRunning}
+                    disabled={props.loading}
                     onClick={() => void props.onUpdateSessionSettings({ detailLevel: level })}
                   >
                     <span>{level}</span>
