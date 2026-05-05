@@ -88,6 +88,7 @@ type CgLaneEvent = {
 };
 
 type WebgptConversationMode = "resume" | "new";
+type AuthorProvider = "webgpt" | "gemma4_local";
 
 type EventClient = {
   id: number;
@@ -494,6 +495,31 @@ function conversationModeArg(value: unknown): WebgptConversationMode {
   return value === "new" || value === "rollover" ? "new" : "resume";
 }
 
+function authorProviderArg(value: unknown): AuthorProvider {
+  const rawValue = typeof value === "string" && value.trim() ? value.trim() : process.env.VNPLAYER_TEXT_AUTHOR_PROVIDER ?? "webgpt";
+  const normalized = rawValue.toLowerCase().replace(/[-\s]/g, "_");
+  switch (normalized) {
+    case "webgpt":
+      return "webgpt";
+    case "gemma":
+    case "gemma4":
+    case "gemma_4":
+    case "gemma4_local":
+    case "gemma4_llamacpp":
+    case "llama_cpp":
+    case "llamacpp":
+    case "local_gemma":
+    case "local_llm":
+      return "gemma4_local";
+    default:
+      throw new Error(`지원하지 않는 작성 provider입니다: ${rawValue}`);
+  }
+}
+
+function authorProviderLabel(provider: AuthorProvider): string {
+  return provider === "gemma4_local" ? "Gemma4 llama.cpp" : "WebGPT";
+}
+
 function verifyPublicToolAccess(toolName: ConnectorToolName, args: unknown): WebgptDispatchRecord | null {
   if (!publicDispatchScopedToolNames.has(toolName)) {
     return null;
@@ -591,19 +617,22 @@ function closeDispatchAfterPublicReceive(
   return closed;
 }
 
-function startWebgptAuthorJob(input: {
+function startTextAuthorJob(input: {
   worldId: string;
   sessionId: string;
   baseUrl: string;
+  provider?: AuthorProvider;
   conversationMode?: WebgptConversationMode;
   trigger?: Record<string, unknown>;
   serverTimings?: Record<string, string>;
-}): { started: true; dispatchId: string } {
+}): { started: true; dispatchId: string; provider: AuthorProvider } {
+  const provider = input.provider ?? authorProviderArg(null);
+  const providerLabel = authorProviderLabel(provider);
   const key = activeWebgptJobsKey(input.worldId, input.sessionId);
   if (activeWebgptJobs.has(key)) {
     const activeDispatch = repository.activeWebgptDispatch(input.worldId, input.sessionId);
     if (activeDispatch) {
-      throw new Error("이미 이 세션의 WebGPT 작성 작업이 진행 중입니다.");
+      throw new Error("이미 이 세션의 작성 작업이 진행 중입니다.");
     }
     activeWebgptJobs.delete(key);
   }
@@ -617,8 +646,10 @@ function startWebgptAuthorJob(input: {
     sessionId: input.sessionId,
     dispatchTokenHash: hashDispatchToken(dispatchToken),
     payload: {
+      provider,
       baseUrl: input.baseUrl,
       conversationMode,
+      promptMode: provider === "gemma4_local" ? "gemma-stateless-current" : "webgpt-chat-session",
       startedBy: "vnplayer-server",
       trigger: input.trigger ?? null,
       serverTimings: {
@@ -634,26 +665,32 @@ function startWebgptAuthorJob(input: {
     status: dispatch.status
   });
   activeWebgptJobs.add(key);
-  const scriptPath = resolve(projectRoot, "scripts", "webgpt-author-once.mjs");
+  const scriptPath = resolve(projectRoot, "scripts", provider === "gemma4_local" ? "gemma-author-once.mjs" : "webgpt-author-once.mjs");
+  const commonArgs = [
+    scriptPath,
+    "--world-id",
+    input.worldId,
+    "--session-id",
+    input.sessionId,
+    "--local-base-url",
+    `http://127.0.0.1:${port}`,
+    "--dispatch-id",
+    dispatchId,
+    "--dispatch-token",
+    dispatchToken
+  ];
+  const providerArgs =
+    provider === "webgpt"
+      ? [
+          "--base-url",
+          input.baseUrl,
+          "--conversation-mode",
+          conversationMode
+        ]
+      : [];
   const child = spawn(
     process.execPath,
-    [
-      scriptPath,
-      "--world-id",
-      input.worldId,
-      "--session-id",
-      input.sessionId,
-      "--base-url",
-      input.baseUrl,
-      "--local-base-url",
-      `http://127.0.0.1:${port}`,
-      "--dispatch-id",
-      dispatchId,
-      "--dispatch-token",
-      dispatchToken,
-      "--conversation-mode",
-      conversationMode
-    ],
+    [...commonArgs, ...providerArgs],
     {
       cwd: projectRoot,
       env: process.env,
@@ -668,7 +705,7 @@ function startWebgptAuthorJob(input: {
       const failedDispatch = repository.finishWebgptDispatch({
         id: dispatchId,
         status: "failed",
-        errorMessage: "WebGPT 작성 작업이 완료 상태를 남기지 않고 종료되었습니다."
+        errorMessage: `${providerLabel} 작성 작업이 완료 상태를 남기지 않고 종료되었습니다.`
       });
       publishWebgptDispatchChanged({
         worldId: failedDispatch.worldId,
@@ -693,7 +730,7 @@ function startWebgptAuthorJob(input: {
     });
   });
   child.unref();
-  return { started: true, dispatchId };
+  return { started: true, dispatchId, provider };
 }
 
 function startCgLaneJob(input: {
@@ -1052,6 +1089,24 @@ const server = createServer(async (request, response) => {
     return;
   }
 
+  if (request.method === "GET" && url.pathname === "/api/author/providers") {
+    const defaultProvider = authorProviderArg(null);
+    sendJson(response, 200, {
+      ok: true,
+      defaultProvider,
+      providers: [
+        { id: "webgpt", label: authorProviderLabel("webgpt") },
+        {
+          id: "gemma4_local",
+          label: authorProviderLabel("gemma4_local"),
+          promptMode: "gemma-stateless-current",
+          configuration: "server-side"
+        }
+      ]
+    });
+    return;
+  }
+
   if (request.method === "POST" && url.pathname === "/api/connector/call") {
     try {
       const body = await readBody(request);
@@ -1093,10 +1148,11 @@ const server = createServer(async (request, response) => {
       repository.getReaderState(worldId, sessionId);
       sendJson(response, 202, {
         ok: true,
-        ...startWebgptAuthorJob({
+        ...startTextAuthorJob({
           worldId,
           sessionId,
           baseUrl: publicConnectorBaseUrl(request),
+          provider: authorProviderArg(args.provider),
           conversationMode: conversationModeArg(args.conversationMode)
         })
       });
@@ -1104,7 +1160,7 @@ const server = createServer(async (request, response) => {
       sendJson(response, 400, {
         ok: false,
         code: "webgpt_author_start_failed",
-        message: error instanceof Error ? error.message : "WebGPT 작성 작업을 시작하지 못했습니다."
+        message: error instanceof Error ? error.message : "작성 작업을 시작하지 못했습니다."
       });
     }
     return;
@@ -1146,7 +1202,7 @@ const server = createServer(async (request, response) => {
         sendJson(response, 409, {
           ok: false,
           code: "webgpt_dispatch_running",
-          message: "이미 이 세션의 WebGPT 작성 작업이 진행 중입니다.",
+          message: "이미 이 세션의 작성 작업이 진행 중입니다.",
           dispatchId: activeDispatch.id
         });
         return;
@@ -1160,10 +1216,11 @@ const server = createServer(async (request, response) => {
         text: stringArg(args, "text")
       });
       const actionRecordedAt = new Date().toISOString();
-      const author = startWebgptAuthorJob({
+      const author = startTextAuthorJob({
         worldId,
         sessionId,
         baseUrl: publicConnectorBaseUrl(request),
+        provider: authorProviderArg(args.provider),
         conversationMode: conversationModeArg(args.conversationMode),
         trigger: {
           type: "player_action",
@@ -1191,7 +1248,7 @@ const server = createServer(async (request, response) => {
       sendJson(response, 400, {
         ok: false,
         code: "record_action_author_start_failed",
-        message: error instanceof Error ? error.message : "선택을 WebGPT에 전달하지 못했습니다."
+        message: error instanceof Error ? error.message : "선택을 작성 lane에 전달하지 못했습니다."
       });
     }
     return;

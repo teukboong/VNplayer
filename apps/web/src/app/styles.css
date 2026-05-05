@@ -30,6 +30,15 @@
   text-rendering: optimizeLegibility;
 }
 
+@media (max-width: 720px), (pointer: coarse) and (max-width: 900px) {
+  :root {
+    --font-serif: "Noto Serif KR", "AppleMyungjo", "Nanum Myeongjo", "Batang", serif;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    --story-font-size: 1.03rem;
+    --story-focus-font-size: 1.08rem;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -1227,6 +1236,15 @@ textarea {
 .entry-form .section-title {
   align-items: center;
   margin-bottom: 8px;
+}
+
+.entry-author-field {
+  width: min(100%, 320px);
+  margin-bottom: 12px;
+}
+
+.entry-author-field select {
+  padding-block: 9px;
 }
 
 .entry-brand {
@@ -2745,6 +2763,14 @@ a:focus-visible {
   .prose-block {
     max-height: none;
     overflow: visible;
+    font-size: 1.03rem;
+    line-height: 1.76;
+    word-break: keep-all;
+    overflow-wrap: break-word;
+  }
+
+  .prose-block > p {
+    text-indent: 0.9em;
   }
 
   .story-pane.is-log-open .prose-block {

@@ -4,6 +4,12 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
+import {
+  authorLibraryOutlineCount,
+  authorPromptForm,
+  authorVisibleHistoryCount,
+  nonEmptyString
+} from "./author-prompt.mjs";
 
 const repoRoot = resolve(new URL("..", import.meta.url).pathname);
 const defaultWrapper = join(repoRoot, "scripts", "webgpt-local-wrapper.mjs");
@@ -174,139 +180,8 @@ function conversationIdFromUrl(rawUrl) {
   }
 }
 
-function nonEmptyString(value) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
 function detachCdpBrowser(browser) {
   browser?._connection?.close?.("VNplayer CDP detach");
-}
-
-function latestTurns(form, count) {
-  const history = form.readingPacket?.visibleHistory;
-  return Array.isArray(history) ? history.slice(-count) : [];
-}
-
-function trimParagraph(paragraph, maxChars = 900) {
-  if (typeof paragraph !== "string") {
-    return "";
-  }
-  const value = paragraph.trim();
-  return value.length > maxChars ? `${value.slice(0, maxChars).trimEnd()}...` : value;
-}
-
-function summarizeChoices(choices) {
-  if (!Array.isArray(choices)) {
-    return [];
-  }
-  return choices.slice(0, 6).map((choice) => ({
-    label: nonEmptyString(choice?.label) ?? "",
-    action: nonEmptyString(choice?.action) ?? "",
-    tag: nonEmptyString(choice?.tag),
-    intent: nonEmptyString(choice?.intent)
-  }));
-}
-
-function slimHistoryTurnForAuthor(turn) {
-  const paragraphs = Array.isArray(turn?.scene?.paragraphs) ? turn.scene.paragraphs : [];
-  return {
-    scene: {
-      speaker: turn?.scene?.speaker ?? null,
-      paragraphs: paragraphs.map((paragraph) => trimParagraph(paragraph)).filter(Boolean),
-      background: nonEmptyString(turn?.scene?.background),
-      mood: nonEmptyString(turn?.scene?.mood)
-    },
-    concreteDelta: nonEmptyString(turn?.concreteDelta),
-    choices: summarizeChoices(turn?.choices)
-  };
-}
-
-function compactLibraryOutline(form, maxItems = 18) {
-  const outline = form.readingPacket?.libraryOutline;
-  if (!Array.isArray(outline)) {
-    return [];
-  }
-  const activeDocIds = new Set(
-    Array.isArray(form.readingPacket?.activeLibraryDocs)
-      ? form.readingPacket.activeLibraryDocs.map((doc) => doc.docId).filter(Boolean)
-      : []
-  );
-  const usefulKinds = new Set([
-    "world_note",
-    "world_rule",
-    "system_law",
-    "style_guide",
-    "character_card",
-    "location_card",
-    "open_thread",
-    "consequence_note",
-    "encounter_surface",
-    "dialogue_stance",
-    "continuity_note"
-  ]);
-  const scored = outline
-    .filter((doc) => doc?.visibleToLlm !== false && doc?.status !== "superseded" && doc?.status !== "resolved")
-    .map((doc, index) => {
-      const lastTouched = Number.isFinite(Number(doc.lastTouchedTurnIndex)) ? Number(doc.lastTouchedTurnIndex) : -1;
-      const lastUsed = Number.isFinite(Number(doc.lastUsedTurnIndex)) ? Number(doc.lastUsedTurnIndex) : -1;
-      const recency = Math.max(lastTouched, lastUsed);
-      const score =
-        (doc.pinned ? 10000 : 0) +
-        (activeDocIds.has(doc.docId) ? 7000 : 0) +
-        (usefulKinds.has(doc.kind) ? 1500 : 0) +
-        (doc.scope === "scene" ? 700 : doc.scope === "session" ? 500 : doc.scope === "arc" ? 300 : 100) +
-        Math.max(recency, 0) * 20 -
-        index;
-      return { doc, score };
-    })
-    .sort((a, b) => b.score - a.score || String(b.doc.updatedAt).localeCompare(String(a.doc.updatedAt)));
-  return scored.slice(0, maxItems).map(({ doc }) => ({
-    docId: doc.docId,
-    versionId: doc.versionId,
-    kind: doc.kind,
-    title: doc.title,
-    status: doc.status,
-    scope: doc.scope,
-    tags: Array.isArray(doc.tags) ? doc.tags.slice(0, 8) : [],
-    pinned: Boolean(doc.pinned),
-    lastUsedTurnIndex: doc.lastUsedTurnIndex ?? null,
-    lastTouchedTurnIndex: doc.lastTouchedTurnIndex ?? null,
-    updatedAt: doc.updatedAt
-  }));
-}
-
-function authorInstructionForForm(form) {
-  const instruction = typeof form.instruction === "string" ? form.instruction : "";
-  if (form.readingPacket?.worldTitleStatus === "provisional") {
-    return instruction;
-  }
-  return instruction.replace(
-    /readingPacket\.worldTitleStatus가 provisional이고 세계 이름이 아직 덜 잡혔다고 판단되면 첫 1-2턴 안에 StoryTurn\.worldNaming으로 제목 후보를 제안할 수 있습니다\..*?숨은 진실, 미공개 반전, 이후에만 드러날 고유명은 제목 후보에 포함하지 마세요\./,
-    "세계 이름은 이미 확정 또는 비임시 상태입니다. StoryTurn.worldNaming을 작성하지 마세요."
-  );
-}
-
-function authorPromptForm(form, { warmConversation }) {
-  const history = warmConversation ? latestTurns(form, 2) : latestTurns(form, 8);
-  return {
-    worldId: form.worldId,
-    sessionId: form.sessionId,
-    responseShape: form.responseShape,
-    instruction: authorInstructionForForm(form),
-    readingPacket: {
-      ...form.readingPacket,
-      visibleHistory: history.map((turn) => slimHistoryTurnForAuthor(turn)),
-      libraryOutline: compactLibraryOutline(form)
-    }
-  };
-}
-
-function authorVisibleHistoryCount(form, { warmConversation }) {
-  return authorPromptForm(form, { warmConversation }).readingPacket.visibleHistory.length;
-}
-
-function authorLibraryOutlineCount(form) {
-  return compactLibraryOutline(form).length;
 }
 
 function conversationModeFromValue(value) {
@@ -317,9 +192,40 @@ function conversationModeFromValue(value) {
   return "resume";
 }
 
+function webgptVolumeContract(packet) {
+  const detailLevel = Number(packet?.detailLevel);
+  const narrativeLevel = Number(packet?.narrativeLevel);
+  if (detailLevel >= 3) {
+    return {
+      paragraphRange: narrativeLevel >= 3 ? "20-28" : "18-24",
+      minimumParagraphs: 18,
+      minimumChars: narrativeLevel >= 3 ? 2200 : 1800,
+      averageChars: "문단당 공백 제외 평균 90-130자",
+      description: "풍부한 장면 단위"
+    };
+  }
+  if (detailLevel <= 1) {
+    return {
+      paragraphRange: narrativeLevel >= 3 ? "7-10" : "6-10",
+      minimumParagraphs: 6,
+      minimumChars: 650,
+      averageChars: "문단당 공백 제외 평균 65자 이상",
+      description: "간결하지만 완결된 장면 단위"
+    };
+  }
+  return {
+    paragraphRange: narrativeLevel >= 3 ? "14-20" : "12-18",
+    minimumParagraphs: 12,
+    minimumChars: narrativeLevel >= 3 ? 1700 : 1400,
+    averageChars: "문단당 공백 제외 평균 80-120자",
+    description: "표준 장면 단위"
+  };
+}
+
 function buildPrompt({ baseUrl, connectorAppName, conversationMode, previousConversationUrl, form, beforeTurnId, warmConversation, dispatchId, dispatchToken }) {
   const packet = form.readingPacket;
   const promptForm = authorPromptForm(form, { warmConversation });
+  const volume = webgptVolumeContract(packet);
   const latestAction = packet.latestPlayerAction;
   const latestActionLine = latestAction
     ? `이번 플레이어 선택: [${latestAction.label}] ${latestAction.text}`
@@ -345,6 +251,11 @@ function buildPrompt({ baseUrl, connectorAppName, conversationMode, previousConv
     packet.autoCgEnabled === false
       ? "자동 CG 생성: 꺼짐. cgDecision은 작성하지만 백엔드는 자동 CG queue를 만들지 않는다."
       : "자동 CG 생성: 켜짐. cgDecision.generate이면 백엔드가 CG side lane에 큐잉할 수 있다.",
+    "선택지 언어 계약: choices의 label, action, tag, intent는 모두 독자에게 보이는 UI 문구다. 고유명사를 제외하고 한국어로 작성하고, advance/probe/enter/time_pass 같은 영어 메타 태그를 그대로 쓰지 마라.",
+    `WebGPT 서술 분량 계약: scene.paragraphs는 ${volume.description}로 ${volume.paragraphRange}개를 목표로 쓴다. 극단적인 예외가 아니면 최소 ${volume.minimumParagraphs}문단, 공백 제외 ${volume.minimumChars}자 미만으로 제출하지 마라.`,
+    `짧은 문단으로 문단 수만 채우지 마라. ${volume.averageChars}를 지키고, 대사 단독 문단이 연속될 때도 앞뒤에 행동, 공간, 압력 변화, 작은 후과를 붙여 장면 밀도를 유지해라.`,
+    "제출 전에 scene.paragraphs 전체를 스스로 검산하라. 분량 계약보다 짧다고 판단되면 vn_receive_visible_turn_v2를 호출하지 말고 산문을 먼저 확장해라.",
+    "도구 호출 JSON 안에서도 산문을 요약하지 마라. scene.paragraphs는 독자가 바로 읽는 본문이며, 선택지로 빨리 넘어가기 위한 synopsis가 아니다.",
     warmConversation
       ? "이전 ChatGPT 대화는 있을 수 있지만 아래 로컬 delta 스냅샷이 권위다. delta 스냅샷의 visibleHistory는 scene, concreteDelta, 선택지 요약만 남긴 축약본이므로, interface/cgDecision/worldNaming/libraryUpdates를 과거 턴에서 되풀이하지 않는다."
       : "이 대화가 새 작성 세션이면 아래 전체 가시 양식을 기준으로 시작한다.",

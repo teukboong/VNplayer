@@ -17,8 +17,8 @@ import type {
 } from "./types.js";
 
 const MAX_PAYLOAD_BYTES = 64_000;
-const SOFT_MIN_SCENE_PARAGRAPHS = 8;
-const SOFT_MIN_SCENE_CHARS = 900;
+const SOFT_MIN_SCENE_PARAGRAPHS = 10;
+const SOFT_MIN_SCENE_CHARS = 1_400;
 const unsafeDisplayPattern = /<\s*script|javascript:|on[a-z]+\s*=/i;
 const libraryDocKinds: LibraryDocKind[] = [
   "world_note",
@@ -269,7 +269,7 @@ function normalizeParagraphs(value: unknown, warnings: DisplayabilityWarning[]):
   if (paragraphs.length < SOFT_MIN_SCENE_PARAGRAPHS) {
     warnings.push({
       code: "short_scene_paragraphs",
-      message: `서술 문단이 짧습니다. 다음 작성 요청에서는 보통 10-18문단의 장면 단위를 요구하는 편이 좋습니다. 현재 ${paragraphs.length}문단입니다.`,
+      message: `서술 문단이 짧습니다. 다음 작성 요청에서는 보통 12-18문단 이상의 장면 단위를 요구하는 편이 좋습니다. 현재 ${paragraphs.length}문단입니다.`,
       path: "scene.paragraphs"
     });
   }
@@ -278,7 +278,7 @@ function normalizeParagraphs(value: unknown, warnings: DisplayabilityWarning[]):
   if (sceneCharCount < SOFT_MIN_SCENE_CHARS) {
     warnings.push({
       code: "short_scene_text",
-      message: `서술 밀도가 낮습니다. 다음 작성 요청에서는 감각, 공간 작동, 인물 반응, 선택 압력, 작은 후과가 모두 지나가도록 요구하는 편이 좋습니다. 현재 공백 제외 ${sceneCharCount}자입니다.`,
+      message: `서술 밀도가 낮습니다. 다음 작성 요청에서는 감각, 공간 작동, 인물 반응, 선택 압력, 작은 후과가 모두 지나가도록 요구하는 편이 좋습니다. 현재 공백 제외 ${sceneCharCount}자입니다. 표준 이상 설정에서는 최소 1400자, 풍부 설정에서는 1800자 이상을 목표로 두세요.`,
       path: "scene.paragraphs"
     });
   }

@@ -6,6 +6,13 @@ cd "$(dirname "$0")/.."
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
 
+set -a
+if [[ -f ".env" ]]; then
+  # shellcheck disable=SC1091
+  source ".env"
+fi
+set +a
+
 ACTION="${1:-start}"
 shift || true
 
@@ -13,6 +20,7 @@ DETACH=1
 WAIT_HEALTH=1
 RUN_ID="${VNPLAYER_RUN_ID:-managed-$(date -u +%Y%m%dT%H%M%SZ)}"
 WEB_PORT="${VNPLAYER_WEB_PORT:-4173}"
+WEB_HOST="${VNPLAYER_WEB_HOST:-127.0.0.1}"
 API_PORT="${VNPLAYER_PORT:-4174}"
 LOCAL_BASE_URL="${VNPLAYER_LOCAL_BASE_URL:-http://127.0.0.1:${API_PORT}}"
 CG_WORKER="${VNPLAYER_DEV_CG_WORKER:-1}"
@@ -101,7 +109,6 @@ known_vnplayer_pids() {
     port_pids "${API_PORT}"
     pattern_pids "node scripts/dev\\.mjs"
     pattern_pids "node dist/server/apps/server/src/index\\.js"
-    pattern_pids "vite --host 127\\.0\\.0\\.1 --port ${WEB_PORT}"
     pattern_pids "node .*scripts/webgpt-cg-worker\\.mjs"
     pattern_pids "node .*scripts/webgpt-cg-once\\.mjs"
     pattern_pids "bash scripts/run-mcp-tunnel\\.sh"
@@ -262,6 +269,8 @@ start_foreground() {
   log "starting foreground dev stack run_id=${RUN_ID}"
   env \
     RUN_ID="${RUN_ID}" \
+    VNPLAYER_WEB_HOST="${WEB_HOST}" \
+    VNPLAYER_WEB_PORT="${WEB_PORT}" \
     VNPLAYER_DEV_CG_WORKER="${CG_WORKER}" \
     VNPLAYER_DEV_MCP_TUNNEL="${MCP_TUNNEL}" \
     VNPLAYER_WEBGPT_CG_ALLOW_GLOBAL="${VNPLAYER_WEBGPT_CG_ALLOW_GLOBAL:-1}" \
@@ -287,7 +296,7 @@ start_detached() {
 
   mkdir -p "${STATE_DIR}" data
   local command
-  command="cd $(quote "$PWD") && RUN_ID=$(quote "$RUN_ID") VNPLAYER_DEV_CG_WORKER=$(quote "$CG_WORKER") VNPLAYER_DEV_MCP_TUNNEL=$(quote "$MCP_TUNNEL") VNPLAYER_WEBGPT_CG_ALLOW_GLOBAL=$(quote "${VNPLAYER_WEBGPT_CG_ALLOW_GLOBAL:-1}") VNPLAYER_WEBGPT_CG_ACTIVE_ONLY=$(quote "${VNPLAYER_WEBGPT_CG_ACTIVE_ONLY:-1}") VNPLAYER_WEBGPT_CONNECTOR_APP_NAME=$(quote "$CONNECTOR_APP_NAME") VNPLAYER_TUNNEL_STATE_FILE=$(quote "${STATE_DIR}/mcp_tunnel_base_url.txt") VNPLAYER_TUNNEL_PENDING_FILE=$(quote "${STATE_DIR}/mcp_tunnel_origin_pending.txt") VNPLAYER_TUNNEL_LOCK_DIR=$(quote "${STATE_DIR}/mcp_tunnel.lock") VNPLAYER_TUNNEL_LOG_PIPE_DIR=$(quote "${STATE_DIR}/mcp_tunnel_pipes") npm run dev 2>&1 | tee $(quote "$LOG_FILE")"
+  command="cd $(quote "$PWD") && RUN_ID=$(quote "$RUN_ID") VNPLAYER_WEB_HOST=$(quote "$WEB_HOST") VNPLAYER_WEB_PORT=$(quote "$WEB_PORT") VNPLAYER_DEV_CG_WORKER=$(quote "$CG_WORKER") VNPLAYER_DEV_MCP_TUNNEL=$(quote "$MCP_TUNNEL") VNPLAYER_WEBGPT_CG_ALLOW_GLOBAL=$(quote "${VNPLAYER_WEBGPT_CG_ALLOW_GLOBAL:-1}") VNPLAYER_WEBGPT_CG_ACTIVE_ONLY=$(quote "${VNPLAYER_WEBGPT_CG_ACTIVE_ONLY:-1}") VNPLAYER_WEBGPT_CONNECTOR_APP_NAME=$(quote "$CONNECTOR_APP_NAME") VNPLAYER_TUNNEL_STATE_FILE=$(quote "${STATE_DIR}/mcp_tunnel_base_url.txt") VNPLAYER_TUNNEL_PENDING_FILE=$(quote "${STATE_DIR}/mcp_tunnel_origin_pending.txt") VNPLAYER_TUNNEL_LOCK_DIR=$(quote "${STATE_DIR}/mcp_tunnel.lock") VNPLAYER_TUNNEL_LOG_PIPE_DIR=$(quote "${STATE_DIR}/mcp_tunnel_pipes") npm run dev 2>&1 | tee $(quote "$LOG_FILE")"
 
   log "starting detached screen ${SCREEN_NAME}"
   screen -dmS "${SCREEN_NAME}" zsh -lc "${command}"

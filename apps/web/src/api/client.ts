@@ -3,6 +3,8 @@ import type { ToolError } from "../../../../packages/core/src/index.js";
 
 type ToolResponse<T> = ({ ok: true } & T) | ToolError;
 export type WebgptConversationMode = "resume" | "new";
+export type AuthorProvider = "webgpt" | "gemma4_local";
+type AuthorOptions = { conversationMode?: WebgptConversationMode; provider?: AuthorProvider };
 
 export class ConnectorError extends Error {
   readonly code: string;
@@ -32,19 +34,23 @@ export async function callTool<T>(toolName: ConnectorToolName, args: Record<stri
   return result as T;
 }
 
-export async function startWebgptAuthor(worldId: string, sessionId: string, options: { conversationMode?: WebgptConversationMode } = {}): Promise<{ dispatchId?: string }> {
+function providerBody(provider: AuthorProvider | undefined): { provider?: AuthorProvider } {
+  return provider && provider !== "webgpt" ? { provider } : {};
+}
+
+export async function startWebgptAuthor(worldId: string, sessionId: string, options: AuthorOptions = {}): Promise<{ dispatchId?: string; provider?: AuthorProvider }> {
   const response = await fetch("/api/webgpt/author-once", {
     method: "POST",
     headers: {
       "content-type": "application/json"
     },
-    body: JSON.stringify({ worldId, sessionId, conversationMode: options.conversationMode ?? "resume" })
+    body: JSON.stringify({ worldId, sessionId, conversationMode: options.conversationMode ?? "resume", ...providerBody(options.provider) })
   });
-  const body = (await response.json()) as { ok?: boolean; message?: string; dispatchId?: string };
+  const body = (await response.json()) as { ok?: boolean; message?: string; dispatchId?: string; provider?: AuthorProvider };
   if (!response.ok || body.ok === false) {
-    throw new Error(body.message ?? "WebGPT 작성 작업을 시작하지 못했습니다.");
+    throw new Error(body.message ?? "작성 작업을 시작하지 못했습니다.");
   }
-  return body.dispatchId ? { dispatchId: body.dispatchId } : {};
+  return body.dispatchId ? { dispatchId: body.dispatchId, ...(body.provider ? { provider: body.provider } : {}) } : {};
 }
 
 export async function startWebgptCgLane(
@@ -75,27 +81,31 @@ export async function recordActionAndStartWebgpt(input: {
   label?: string | null;
   text: string;
   conversationMode?: WebgptConversationMode;
-}): Promise<{ playerActionId: string; dispatchId: string; timings?: Record<string, string> }> {
+  provider?: AuthorProvider;
+}): Promise<{ playerActionId: string; dispatchId: string; provider?: AuthorProvider; timings?: Record<string, string> }> {
+  const { provider, ...payload } = input;
   const response = await fetch("/api/webgpt/record-action-and-author", {
     method: "POST",
     headers: {
       "content-type": "application/json"
     },
-    body: JSON.stringify(input)
+    body: JSON.stringify({ ...payload, ...providerBody(provider) })
   });
   const body = (await response.json()) as {
     ok?: boolean;
     message?: string;
     playerActionId?: string;
     dispatchId?: string;
+    provider?: AuthorProvider;
     timings?: Record<string, string>;
   };
   if (!response.ok || body.ok === false || !body.playerActionId || !body.dispatchId) {
-    throw new Error(body.message ?? "선택을 WebGPT에 전달하지 못했습니다.");
+    throw new Error(body.message ?? "선택을 작성 lane에 전달하지 못했습니다.");
   }
   return {
     playerActionId: body.playerActionId,
     dispatchId: body.dispatchId,
+    ...(body.provider ? { provider: body.provider } : {}),
     ...(body.timings ? { timings: body.timings } : {})
   };
 }

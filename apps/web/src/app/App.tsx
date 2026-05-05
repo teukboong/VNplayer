@@ -10,7 +10,7 @@ import type {
   NarrativeLevel,
   StoryInterface
 } from "../../../../packages/core/src/index.js";
-import type { WebgptConversationMode } from "../api/client.js";
+import type { AuthorProvider, WebgptConversationMode } from "../api/client.js";
 import { docLabelFor, saveLabelFor, useVNStore } from "../state/useVNStore.js";
 
 const libraryKinds: LibraryDocKind[] = [
@@ -80,6 +80,102 @@ const detailLevelLabels: Record<DetailLevel, string> = {
   2: "표준",
   3: "풍부"
 };
+const authorProviders: AuthorProvider[] = ["webgpt", "gemma4_local"];
+const authorProviderLabels: Record<AuthorProvider, string> = {
+  webgpt: "WebGPT",
+  gemma4_local: "Gemma4 llama.cpp"
+};
+const AUTHOR_PROVIDER_KEY = "vnplayer.authorProvider";
+
+const choiceTagLabels: Record<string, string> = {
+  action: "행동",
+  advance: "진입",
+  aid: "지원",
+  codex: "기록",
+  dialogue: "대화",
+  guard: "경계",
+  investigate: "조사",
+  observation: "관찰",
+  observe: "관찰",
+  resource: "자원",
+  risk: "위험",
+  scout: "정찰",
+  stealth: "은신",
+  survival: "생존",
+  wait: "대기"
+};
+
+const choiceIntentLabels: Record<string, string> = {
+  aid: "돕기",
+  breach: "돌파",
+  clue: "단서 찾기",
+  distraction: "교란",
+  enter: "들어가기",
+  guard: "경계하기",
+  lore: "기록 확인",
+  loot: "확보하기",
+  probe: "캐묻기",
+  reposition: "위치 바꾸기",
+  resource: "자원 확보",
+  scout: "살피기",
+  threat_check: "위협 확인",
+  time_pass: "기다리기",
+  wait: "기다리기"
+};
+
+function hasKorean(value: string): boolean {
+  return /[가-힣]/.test(value);
+}
+
+function normalizeChoiceMeta(value: string | null | undefined): string {
+  return String(value ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+function choiceTagForDisplay(value: string | null | undefined): string | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) {
+    return null;
+  }
+  if (hasKorean(raw)) {
+    return raw;
+  }
+  return choiceTagLabels[normalizeChoiceMeta(raw)] ?? "행동";
+}
+
+function choiceIntentForDisplay(value: string | null | undefined): string | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) {
+    return null;
+  }
+  if (hasKorean(raw)) {
+    return raw;
+  }
+  return choiceIntentLabels[normalizeChoiceMeta(raw)] ?? null;
+}
+
+function isAuthorProvider(value: unknown): value is AuthorProvider {
+  return value === "webgpt" || value === "gemma4_local";
+}
+
+function readPreferredAuthorProvider(): AuthorProvider {
+  const value = localStorage.getItem(AUTHOR_PROVIDER_KEY);
+  return isAuthorProvider(value) ? value : "webgpt";
+}
+
+function savePreferredAuthorProvider(provider: AuthorProvider): void {
+  localStorage.setItem(AUTHOR_PROVIDER_KEY, provider);
+}
+
+function dispatchProvider(dispatch: { payload?: unknown } | null | undefined): AuthorProvider {
+  const payload = dispatch?.payload;
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    const provider = (payload as Record<string, unknown>).provider;
+    if (isAuthorProvider(provider)) {
+      return provider;
+    }
+  }
+  return "webgpt";
+}
 
 function parseSubmission(text: string): unknown {
   try {
@@ -290,13 +386,21 @@ export function App() {
 function EntryScreen(props: {
   worlds: ReturnType<typeof useVNStore.getState>["worlds"];
   loading: boolean;
-  onCreateWorld: (input: { seedText: string; randomSeedEnabled: boolean; randomSeedValue?: string | null; cgStylePrompt?: string | null; title?: string | null }) => Promise<void>;
+  onCreateWorld: (input: {
+    seedText: string;
+    randomSeedEnabled: boolean;
+    randomSeedValue?: string | null;
+    cgStylePrompt?: string | null;
+    title?: string | null;
+    provider?: AuthorProvider;
+  }) => Promise<void>;
   onOpenWorld: (worldId: string, sessionId: string) => Promise<void>;
 }) {
   const [seedText, setSeedText] = useState("");
   const [randomSeedEnabled, setRandomSeedEnabled] = useState(true);
   const [randomSeedValue, setRandomSeedValue] = useState("");
   const [cgStylePrompt, setCgStylePrompt] = useState(defaultCgStylePrompt);
+  const [authorProvider, setAuthorProvider] = useState<AuthorProvider>(readPreferredAuthorProvider);
   const [entryMode, setEntryMode] = useState<"new" | "existing">("new");
   const seedFieldRef = useRef<HTMLTextAreaElement | null>(null);
   const worldListRef = useRef<HTMLDivElement | null>(null);
@@ -314,6 +418,11 @@ function EntryScreen(props: {
     });
   };
 
+  const selectAuthorProvider = (provider: AuthorProvider) => {
+    setAuthorProvider(provider);
+    savePreferredAuthorProvider(provider);
+  };
+
   return (
     <section className={`entry-grid entry-mode-${entryMode}`} aria-label="세계 진입">
       <form
@@ -324,13 +433,24 @@ function EntryScreen(props: {
             seedText,
             randomSeedEnabled,
             randomSeedValue: randomSeedEnabled ? randomSeedValue.trim() || null : null,
-            cgStylePrompt: cgStylePrompt.trim() || null
+            cgStylePrompt: cgStylePrompt.trim() || null,
+            provider: authorProvider
           });
         }}
       >
         <div className="section-title">
           <p className="entry-brand">VNplayer</p>
         </div>
+        <label className="field compact-field entry-author-field">
+          <span>작성 좌석</span>
+          <select value={authorProvider} disabled={props.loading} onChange={(event) => selectAuthorProvider(event.target.value as AuthorProvider)}>
+            {authorProviders.map((provider) => (
+              <option value={provider} key={provider}>
+                {authorProviderLabels[provider]}
+              </option>
+            ))}
+          </select>
+        </label>
         <div className="entry-choice-row" aria-label="세계 진입 방식">
           <button
             className={`entry-choice-card ${entryMode === "new" ? "is-active" : ""}`}
@@ -447,12 +567,12 @@ function ReaderScreen(props: {
   lastWarnings: ReturnType<typeof useVNStore.getState>["lastWarnings"];
   onRefreshReader: () => Promise<void>;
   onSubmitTurn: (turn: unknown) => Promise<void>;
-  onRecordAction: (input: { kind: "choice" | "freeform"; label?: string | null; text: string; conversationMode?: WebgptConversationMode }) => Promise<void>;
+  onRecordAction: (input: { kind: "choice" | "freeform"; label?: string | null; text: string; conversationMode?: WebgptConversationMode; provider?: AuthorProvider }) => Promise<void>;
   onCreateSave: (label: string) => Promise<void>;
   onLoadSave: (saveId: string) => Promise<void>;
   onLinkWebgptSession: (url: string) => Promise<void>;
   onUpdateSessionSettings: (input: { autoCgEnabled?: boolean; narrativeLevel?: NarrativeLevel; detailLevel?: DetailLevel }) => Promise<void>;
-  onRequestWebgptTurn: (options?: { conversationMode?: WebgptConversationMode }) => Promise<void>;
+  onRequestWebgptTurn: (options?: { conversationMode?: WebgptConversationMode; provider?: AuthorProvider }) => Promise<void>;
   onPrepareCgAsset: (options?: { conversationMode?: WebgptConversationMode }) => Promise<void>;
   onRetryCgJob: (options?: { conversationMode?: WebgptConversationMode }) => Promise<void>;
   onUpdateWorldTitle: (input: { title: string; subtitle?: string | null; locked: boolean }) => Promise<void>;
@@ -479,6 +599,7 @@ function ReaderScreen(props: {
   const [turnParseError, setTurnParseError] = useState<string | null>(null);
   const [saveLabel, setSaveLabel] = useState("책갈피");
   const [webgptUrl, setWebgptUrl] = useState(props.state.session.webgptSessionUrl ?? "");
+  const [authorProvider, setAuthorProvider] = useState<AuthorProvider>(readPreferredAuthorProvider);
   const [webgptConversationMode, setWebgptConversationMode] = useState<WebgptConversationMode>("resume");
   const [cgConversationMode, setCgConversationMode] = useState<WebgptConversationMode>("resume");
   const [worldTitle, setWorldTitle] = useState(props.state.world.title);
@@ -508,6 +629,8 @@ function ReaderScreen(props: {
   const backgroundCgAsset = current ? props.state.backgroundCgAsset ?? currentCgAsset : null;
   const backgroundCgImageUrl = backgroundCgAsset?.imageUrl?.trim() ?? "";
   const webgptRunning = props.state.activeWebgptDispatch?.status === "running";
+  const activeAuthorProvider = dispatchProvider(props.state.activeWebgptDispatch) ?? authorProvider;
+  const latestAuthorProvider = dispatchProvider(props.state.latestWebgptDispatch) ?? authorProvider;
   const showDebugTools = useMemo(debugToolsEnabled, []);
   const [connectorSurface, setConnectorSurface] = useState(localConnectorOrigin);
 
@@ -521,6 +644,14 @@ function ReaderScreen(props: {
       setWebgptConversationMode("resume");
     }
     return mode;
+  };
+
+  const selectAuthorProvider = (provider: AuthorProvider) => {
+    setAuthorProvider(provider);
+    savePreferredAuthorProvider(provider);
+    if (provider !== "webgpt") {
+      setWebgptConversationMode("resume");
+    }
   };
 
   const consumeCgConversationMode = () => {
@@ -753,21 +884,33 @@ function ReaderScreen(props: {
 
             <div className="choices" aria-label="선택지">
               {current?.choices.length ? (
-                current.choices.map((choice) => (
-                  <button
-                    type="button"
-                    key={`${choice.label}-${choice.action}`}
-                    disabled={props.loading || webgptRunning}
-                    onClick={() => void props.onRecordAction({ kind: "choice", label: choice.label, text: choice.action, conversationMode: consumeWebgptConversationMode() })}
-                  >
-                    <span>
-                      {choice.tag ? <em>{choice.tag}</em> : null}
-                      {choice.label}
-                    </span>
-                    {choice.intent ? <q>{choice.intent}</q> : null}
-                    <small>{choice.action}</small>
-                  </button>
-                ))
+                current.choices.map((choice) => {
+                  const tagLabel = choiceTagForDisplay(choice.tag);
+                  const intentLabel = choiceIntentForDisplay(choice.intent);
+                  return (
+                    <button
+                      type="button"
+                      key={`${choice.label}-${choice.action}`}
+                      disabled={props.loading || webgptRunning}
+                      onClick={() =>
+                        void props.onRecordAction({
+                          kind: "choice",
+                          label: choice.label,
+                          text: choice.action,
+                          conversationMode: consumeWebgptConversationMode(),
+                          provider: authorProvider
+                        })
+                      }
+                    >
+                      <span>
+                        {tagLabel ? <em>{tagLabel}</em> : null}
+                        {choice.label}
+                      </span>
+                      {intentLabel ? <q>{intentLabel}</q> : null}
+                      <small>{choice.action}</small>
+                    </button>
+                  );
+                })
               ) : (
                 <p className="muted">아직 선택지가 없습니다. 자유 행동으로 다음 순간을 건넬 수 있습니다.</p>
               )}
@@ -777,7 +920,9 @@ function ReaderScreen(props: {
               className="freeform-row"
               onSubmit={(event) => {
                 event.preventDefault();
-                void props.onRecordAction({ kind: "freeform", text: freeform, conversationMode: consumeWebgptConversationMode() }).then(() => setFreeform(""));
+                void props
+                  .onRecordAction({ kind: "freeform", text: freeform, conversationMode: consumeWebgptConversationMode(), provider: authorProvider })
+                  .then(() => setFreeform(""));
               }}
             >
               <label className="field">
@@ -853,19 +998,29 @@ function ReaderScreen(props: {
               className="primary"
               type="button"
               disabled={props.loading || webgptRunning}
-              onClick={() => void props.onRequestWebgptTurn({ conversationMode: consumeWebgptConversationMode() })}
+              onClick={() => void props.onRequestWebgptTurn({ conversationMode: consumeWebgptConversationMode(), provider: authorProvider })}
             >
-              {webgptRunning ? "WebGPT가 쓰는 중" : "첫 장면 부르기"}
+              {webgptRunning ? `${authorProviderLabels[activeAuthorProvider]}가 쓰는 중` : "첫 장면 부르기"}
             </button>
           ) : null}
           {props.state.latestWebgptDispatch ? (
             <p className={`dispatch-status quiet ${props.state.latestWebgptDispatch.status}`}>
-              {dispatchStatusLabel(props.state.latestWebgptDispatch.status)}
+              {authorProviderLabels[latestAuthorProvider]} · {dispatchStatusLabel(props.state.latestWebgptDispatch.status)}
               {props.state.latestWebgptDispatch.errorMessage ? <small>{props.state.latestWebgptDispatch.errorMessage}</small> : null}
             </p>
           ) : null}
           <details className="restore-details">
             <summary>책갈피와 연결</summary>
+            <label className="field compact-field">
+              <span>작성 좌석</span>
+              <select value={authorProvider} disabled={props.loading || webgptRunning} onChange={(event) => selectAuthorProvider(event.target.value as AuthorProvider)}>
+                {authorProviders.map((provider) => (
+                  <option value={provider} key={provider}>
+                    {authorProviderLabels[provider]}
+                  </option>
+                ))}
+              </select>
+            </label>
             {props.state.session.webgptSessionUrl ? (
               <a className="restore-link" href={props.state.session.webgptSessionUrl} target="_blank" rel="noreferrer">
                 저장된 WebGPT 세션 열기
@@ -875,7 +1030,7 @@ function ReaderScreen(props: {
               <input
                 type="checkbox"
                 checked={webgptConversationMode === "new"}
-                disabled={props.loading || webgptRunning}
+                disabled={props.loading || webgptRunning || authorProvider !== "webgpt"}
                 onChange={(event) => setWebgptConversationMode(event.target.checked ? "new" : "resume")}
               />
               <span>다음 작업에서 새 WebGPT 세션으로 갈아타기</span>

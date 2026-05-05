@@ -185,9 +185,9 @@ function detectParagraphDensity(turn: StoryTurn): DisplayabilityWarning | null {
   }
   const lengths = paragraphs.map((paragraph) => paragraph.trim().length);
   const average = lengths.reduce((sum, length) => sum + length, 0) / lengths.length;
-  const veryShortCount = lengths.filter((length) => length < 35).length;
-  if (average < 55 && veryShortCount >= Math.ceil(paragraphs.length * 0.45)) {
-    return warning("post_turn_paragraph_density_outlier", "짧은 문단이 과밀해 장면 진행보다 절단 리듬이 앞설 수 있습니다.", "scene.paragraphs");
+  const veryShortCount = lengths.filter((length) => length < 55).length;
+  if (average < 80 || veryShortCount >= Math.ceil(paragraphs.length * 0.4)) {
+    return warning("post_turn_paragraph_density_outlier", "짧은 문단이 과밀해 장면 진행보다 절단 리듬이 앞설 수 있습니다. 문단 수뿐 아니라 문단당 장면 밀도도 늘려야 합니다.", "scene.paragraphs");
   }
   if (paragraphs.length > 28) {
     return warning("post_turn_paragraph_density_outlier", "문단 수가 매우 많습니다. 묘사가 아니라 상태 변화가 늘었는지 확인이 필요합니다.", "scene.paragraphs");

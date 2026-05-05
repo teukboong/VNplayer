@@ -308,7 +308,85 @@ function hasInlineLibraryUpdateMarker(turn: Record<string, unknown>): boolean {
   return Array.isArray(paragraphs) && paragraphs.some((paragraph) => typeof paragraph === "string" && paragraph.includes("LIBRARY_UPDATE_JSON:"));
 }
 
-function requireVisibleTurnV2Contract(toolName: ConnectorToolName, args: Record<string, unknown>): void {
+type VisibleTurnV2ContractContext = {
+  detailLevel?: DetailLevel;
+  narrativeLevel?: NarrativeLevel;
+};
+
+function paragraphsFromTurn(turn: Record<string, unknown>): string[] {
+  const scene = turn.scene;
+  if (!isRecord(scene)) {
+    return [];
+  }
+  const rawParagraphs = scene.paragraphs;
+  if (typeof rawParagraphs === "string") {
+    return rawParagraphs.trim() ? [rawParagraphs.trim()] : [];
+  }
+  if (!Array.isArray(rawParagraphs)) {
+    return [];
+  }
+  return rawParagraphs.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim());
+}
+
+function volumeContractForSettings(context: VisibleTurnV2ContractContext): {
+  minimumParagraphs: number;
+  minimumChars: number;
+  minimumAverageChars: number;
+  label: string;
+} {
+  const detailLevel = context.detailLevel ?? 2;
+  const narrativeLevel = context.narrativeLevel ?? 2;
+  if (detailLevel >= 3) {
+    return {
+      minimumParagraphs: 18,
+      minimumChars: narrativeLevel >= 3 ? 2200 : 1800,
+      minimumAverageChars: 85,
+      label: "묘사 밀도 3"
+    };
+  }
+  if (detailLevel <= 1) {
+    return {
+      minimumParagraphs: 6,
+      minimumChars: 650,
+      minimumAverageChars: 50,
+      label: "묘사 밀도 1"
+    };
+  }
+  return {
+    minimumParagraphs: 12,
+    minimumChars: narrativeLevel >= 3 ? 1700 : 1400,
+    minimumAverageChars: 75,
+    label: "묘사 밀도 2"
+  };
+}
+
+function requireVisibleTurnVolumeContract(turn: Record<string, unknown>, context: VisibleTurnV2ContractContext): void {
+  const paragraphs = paragraphsFromTurn(turn);
+  const contract = volumeContractForSettings(context);
+  const sceneChars = paragraphs.join("\n\n").replace(/\s/g, "").length;
+  const averageChars = paragraphs.length ? Math.floor(sceneChars / paragraphs.length) : 0;
+  const failures = [
+    paragraphs.length < contract.minimumParagraphs
+      ? `현재 ${paragraphs.length}문단, 최소 ${contract.minimumParagraphs}문단 필요`
+      : null,
+    sceneChars < contract.minimumChars
+      ? `현재 공백 제외 ${sceneChars}자, 최소 ${contract.minimumChars}자 필요`
+      : null,
+    averageChars < contract.minimumAverageChars
+      ? `현재 문단당 평균 ${averageChars}자, 최소 ${contract.minimumAverageChars}자 필요`
+      : null
+  ].filter((failure): failure is string => Boolean(failure));
+  if (!failures.length) {
+    return;
+  }
+  throw new RepositoryError(
+    "scene_volume_contract_failed",
+    `WebGPT 작성 턴이 ${contract.label} 서술 분량 계약보다 짧습니다. 짧은 문단으로 문단 수만 채우지 말고 산문을 확장한 뒤 다시 제출하세요. ${failures.join("; ")}`,
+    [{ path: "turn.scene.paragraphs", message: failures.join("; ") }]
+  );
+}
+
+function requireVisibleTurnV2Contract(toolName: ConnectorToolName, args: Record<string, unknown>, context: VisibleTurnV2ContractContext = {}): void {
   if (toolName === "vn_receive_visible_turn") {
     throw new RepositoryError(
       "legacy_receive_tool_retired",
@@ -334,6 +412,7 @@ function requireVisibleTurnV2Contract(toolName: ConnectorToolName, args: Record<
       { path: "turn.cgDecision", message: "decision은 generate 또는 skip이어야 합니다." }
     ]);
   }
+  requireVisibleTurnVolumeContract(turn, context);
 }
 
 type ConnectorToolEvents = {
@@ -411,10 +490,16 @@ export function createConnectorTools(repository: Repository, events: ConnectorTo
         case "vn_submit_turn":
         case "vn_receive_visible_turn":
         case "vn_receive_visible_turn_v2":
-          requireVisibleTurnV2Contract(toolName, args);
+          const submittedWorldId = requiredString(args, "worldId");
+          const submittedSessionId = requiredString(args, "sessionId");
+          const readerState = repository.getReaderState(submittedWorldId, submittedSessionId);
+          requireVisibleTurnV2Contract(toolName, args, {
+            detailLevel: readerState.session.detailLevel,
+            narrativeLevel: readerState.session.narrativeLevel
+          });
           const submitResult = repository.submitTurn({
-            worldId: requiredString(args, "worldId"),
-            sessionId: requiredString(args, "sessionId"),
+            worldId: submittedWorldId,
+            sessionId: submittedSessionId,
             source: toolName === "vn_receive_visible_turn" || toolName === "vn_receive_visible_turn_v2"
               ? "llm"
               : (optionalString(args, "source") ?? "llm") === "user_import"
@@ -423,8 +508,8 @@ export function createConnectorTools(repository: Repository, events: ConnectorTo
             turn: args.turn
           });
           events.onTurnSubmitted?.({
-            worldId: requiredString(args, "worldId"),
-            sessionId: requiredString(args, "sessionId"),
+            worldId: submittedWorldId,
+            sessionId: submittedSessionId,
             turnId: submitResult.turnId
           });
           return {

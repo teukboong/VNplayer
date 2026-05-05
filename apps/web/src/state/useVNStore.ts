@@ -15,7 +15,7 @@ import type {
   WorldSummary
 } from "../../../../packages/core/src/index.js";
 import { callTool, recordActionAndStartWebgpt, startWebgptAuthor, startWebgptCgLane } from "../api/client.js";
-import type { WebgptConversationMode } from "../api/client.js";
+import type { AuthorProvider, WebgptConversationMode } from "../api/client.js";
 
 const ACTIVE_KEY = "vnplayer.activeSession";
 
@@ -34,17 +34,24 @@ type StoreState = {
   lastWarnings: DisplayabilityWarning[];
   loadWorlds: () => Promise<void>;
   restoreActive: () => Promise<void>;
-  createWorld: (input: { seedText: string; randomSeedEnabled: boolean; randomSeedValue?: string | null; cgStylePrompt?: string | null; title?: string | null }) => Promise<void>;
+  createWorld: (input: {
+    seedText: string;
+    randomSeedEnabled: boolean;
+    randomSeedValue?: string | null;
+    cgStylePrompt?: string | null;
+    title?: string | null;
+    provider?: AuthorProvider;
+  }) => Promise<void>;
   openWorld: (worldId: string, sessionId: string) => Promise<void>;
   backToEntry: () => void;
   refreshReader: (options?: { silent?: boolean }) => Promise<void>;
   submitTurn: (turn: unknown) => Promise<void>;
-  recordAction: (input: { kind: "choice" | "freeform"; label?: string | null; text: string; conversationMode?: WebgptConversationMode }) => Promise<void>;
+  recordAction: (input: { kind: "choice" | "freeform"; label?: string | null; text: string; conversationMode?: WebgptConversationMode; provider?: AuthorProvider }) => Promise<void>;
   createSave: (label: string) => Promise<void>;
   loadSave: (saveId: string) => Promise<void>;
   linkWebgptSession: (url: string) => Promise<void>;
   updateSessionSettings: (input: { autoCgEnabled?: boolean; narrativeLevel?: NarrativeLevel; detailLevel?: DetailLevel }) => Promise<void>;
-  requestWebgptTurn: (options?: { conversationMode?: WebgptConversationMode }) => Promise<void>;
+  requestWebgptTurn: (options?: { conversationMode?: WebgptConversationMode; provider?: AuthorProvider }) => Promise<void>;
   prepareCgAsset: (options?: { conversationMode?: WebgptConversationMode }) => Promise<void>;
   retryCgJob: (options?: { conversationMode?: WebgptConversationMode }) => Promise<void>;
   updateWorldTitle: (input: { title: string; subtitle?: string | null; locked: boolean }) => Promise<void>;
@@ -108,6 +115,10 @@ function cgAssetNotice(asset: CgAssetRecord): string {
   }
 }
 
+function authorProviderLabel(provider: AuthorProvider | undefined): string {
+  return provider === "gemma4_local" ? "Gemma4 llama.cpp" : "WebGPT";
+}
+
 const libraryKindLabels: Record<LibraryDocKind, string> = {
   world_note: "세계 메모",
   world_rule: "세계 법칙",
@@ -169,9 +180,9 @@ export const useVNStore = create<StoreState>((set, get) => ({
     try {
       const result = await callTool<{ worldId: string; sessionId: string }>("vn_create_world", input);
       await get().openWorld(result.worldId, result.sessionId);
-      await startWebgptAuthor(result.worldId, result.sessionId);
+      const author = await startWebgptAuthor(result.worldId, result.sessionId, input.provider ? { provider: input.provider } : {});
       await get().refreshReader({ silent: true });
-      set({ loading: false, notice: "세계가 열렸습니다. WebGPT가 첫 장면을 쓰고 있습니다." });
+      set({ loading: false, notice: `세계가 열렸습니다. ${authorProviderLabel(author.provider ?? input.provider)}가 첫 장면을 쓰고 있습니다.` });
     } catch (error) {
       set({ error: errorMessage(error), loading: false });
     }
@@ -247,15 +258,16 @@ export const useVNStore = create<StoreState>((set, get) => ({
     };
     set({ loading: true, error: null, notice: null });
     try {
-      await recordActionAndStartWebgpt({
+      const author = await recordActionAndStartWebgpt({
         ...active,
         turnId: state.currentTurn.id,
         ...input
       });
       await get().refreshReader({ silent: true });
+      const label = authorProviderLabel(author.provider ?? input.provider);
       set({
         loading: false,
-        notice: input.kind === "choice" ? "선택을 보냈습니다. WebGPT가 다음 장면을 쓰고 있습니다." : "행동을 보냈습니다. WebGPT가 다음 장면을 쓰고 있습니다."
+        notice: input.kind === "choice" ? `선택을 보냈습니다. ${label}가 다음 장면을 쓰고 있습니다.` : `행동을 보냈습니다. ${label}가 다음 장면을 쓰고 있습니다.`
       });
     } catch (error) {
       set({ error: errorMessage(error), loading: false });
@@ -360,8 +372,8 @@ export const useVNStore = create<StoreState>((set, get) => ({
       set({
         loading: false,
         notice: result.dispatchId
-          ? `WebGPT 작업을 시작했습니다: ${result.dispatchId}`
-          : "WebGPT에 다음 장면을 맡겼습니다. 도착하면 화면이 자동으로 바뀝니다."
+          ? `${authorProviderLabel(result.provider ?? options.provider)} 작업을 시작했습니다: ${result.dispatchId}`
+          : "작성 lane에 다음 장면을 맡겼습니다. 도착하면 화면이 자동으로 바뀝니다."
       });
     } catch (error) {
       set({ error: errorMessage(error), loading: false });

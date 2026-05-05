@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -68,8 +69,12 @@ const secondTurn = {
   scene: {
     speaker: "Archivist",
     paragraphs: [
-      "The green lamp hums once. A paperclip slides by itself to the folder's edge, pointing at a page marked with your name.",
-      "From the stacks, a calm voice answers as if the question was expected hours ago."
+      "The green lamp hums once, not loudly enough to startle the room, but clearly enough to make the wet glass in the far windows tremble. The open folder under it shifts a little as if the table has drawn a breath.",
+      "A paperclip slides by itself to the folder's edge. It turns in a slow half circle, catches the green light along one bent silver side, and stops with its point aimed at a page marked with your name.",
+      "The movement leaves a dry track through the dust. Nothing else on the desk moves, which makes the paperclip feel less like a trick of gravity and more like a small decision made by the room.",
+      "From the stacks, a calm voice answers as if the question was expected hours ago. It does not echo like a person hiding between shelves; it arrives from several aisles at once, level and patient.",
+      "The marked page is still blank except for the name at the top. When the paperclip touches its corner, the paper darkens around the metal as though ink is waiting beneath the fibers.",
+      "The archive has stopped being a silent room with a clue in it. It now has a surface that acts, a voice that listens, and a page that appears ready to answer only after being touched."
     ],
     background: "archive room",
     mood: "focused"
@@ -183,6 +188,64 @@ const externalMcpHeaders = {
 const tinyPngDataUrl = solidPngDataUrl(64, 64);
 const testBackendBaseUrl = process.env.VNPLAYER_TEST_BACKEND_BASE_URL ?? "http://127.0.0.1:4274";
 
+async function readRequestJson(request: IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  if (!chunks.length) {
+    return {};
+  }
+  const text = Buffer.concat(chunks).toString("utf8");
+  return text ? (JSON.parse(text) as Record<string, unknown>) : {};
+}
+
+function writeJson(response: ServerResponse, status: number, body: unknown): void {
+  response.writeHead(status, { "content-type": "application/json" });
+  response.end(JSON.stringify(body));
+}
+
+async function startJsonServer(handler: (request: IncomingMessage, response: ServerResponse) => Promise<void> | void): Promise<{ url: string; close: () => Promise<void> }> {
+  const server = createServer((request, response) => {
+    Promise.resolve(handler(request, response)).catch((error) => {
+      writeJson(response, 500, { ok: false, message: error instanceof Error ? error.message : String(error) });
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("테스트 서버 포트를 열지 못했습니다.");
+  }
+  return {
+    url: `http://127.0.0.1:${address.port}`,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve()))
+  };
+}
+
+async function runNodeScript(args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, args, {
+      cwd: options.cwd,
+      env: options.env,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.once("error", reject);
+    child.once("close", (status) => {
+      resolve({ status, stdout, stderr });
+    });
+  });
+}
+
 function crc32(bytes: Buffer): number {
   let crc = 0xffffffff;
   for (const byte of bytes) {
@@ -224,6 +287,213 @@ function solidPngDataUrl(width: number, height: number): string {
   ]);
   return `data:image/png;base64,${png.toString("base64")}`;
 }
+
+test("Gemma local author worker uses a stateless local prompt and commits through VNplayer tools", async () => {
+  const worldId = "world_gemma_worker";
+  const sessionId = "session_gemma_worker";
+  const dispatchId = "dispatch_gemma_worker";
+  const dispatchToken = "dispatch_token_gemma_worker";
+  const artifactDir = join(tmpdir(), `vnplayer-gemma-worker-${Date.now()}`);
+  const gemmaRequests: Record<string, unknown>[] = [];
+  const finishBodies: Record<string, unknown>[] = [];
+  let committedTurn: Record<string, unknown> | null = null;
+
+  const fakeForm = {
+    worldId,
+    sessionId,
+    responseShape: "StoryTurn",
+    instruction: "Write the next visible turn from the reader packet. Keep hidden truth out of output.",
+    readingPacket: {
+      worldId,
+      sessionId,
+      worldTitle: "Gemma Rain Archive",
+      worldTitleStatus: "locked",
+      worldSeedText: "A literary mystery about memory, weather, and quiet choices.",
+      randomSeedValue: "seed_gemma_worker",
+      autoCgEnabled: false,
+      narrativeLevel: 2,
+      detailLevel: 2,
+      latestPlayerAction: {
+        playerActionId: "action_gemma_worker",
+        turnId: "turn_before",
+        kind: "choice",
+        label: "Follow the lamp",
+        text: "Walk toward the green desk lamp and inspect the open folder."
+      },
+      activeLibraryDocs: [
+        {
+          docId: "doc_seed",
+          versionId: "doc_seed_v1",
+          kind: "world_note",
+          title: "세계관 시드",
+          status: "active",
+          scope: "world",
+          body: { text: "Only visible records can answer." },
+          tags: ["seed"],
+          pinned: true,
+          visibleToLlm: true,
+          visibleToPlayer: true,
+          createdAt: "2026-05-05T00:00:00.000Z",
+          updatedAt: "2026-05-05T00:00:00.000Z"
+        }
+      ],
+      libraryOutline: [
+        {
+          docId: "doc_seed",
+          versionId: "doc_seed_v1",
+          kind: "world_note",
+          title: "세계관 시드",
+          status: "active",
+          scope: "world",
+          tags: ["seed"],
+          pinned: true,
+          visibleToLlm: true,
+          visibleToPlayer: true,
+          createdAt: "2026-05-05T00:00:00.000Z",
+          updatedAt: "2026-05-05T00:00:00.000Z",
+          lastUsedTurnIndex: 1,
+          lastTouchedTurnIndex: 1
+        }
+      ],
+      visibleHistory: [firstTurn]
+    }
+  };
+
+  const fakeBackend = await startJsonServer(async (request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    if (request.method === "POST" && url.pathname === "/api/webgpt/tools/vn_get_reader_state") {
+      await readRequestJson(request);
+      writeJson(response, 200, {
+        ok: true,
+        state: {
+          currentTurn: { id: committedTurn ? "turn_after" : "turn_before" },
+          form: fakeForm
+        }
+      });
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/webgpt/tools/vn_receive_visible_turn_v2") {
+      const body = await readRequestJson(request);
+      committedTurn = body;
+      writeJson(response, 200, { ok: true, turnId: "turn_after", warnings: [] });
+      return;
+    }
+    if (request.method === "POST" && url.pathname === `/api/webgpt/dispatches/${dispatchId}`) {
+      const body = await readRequestJson(request);
+      finishBodies.push(body);
+      writeJson(response, 200, { ok: true, dispatch: { id: dispatchId, status: body.status } });
+      return;
+    }
+    writeJson(response, 404, { ok: false, message: `unknown path: ${url.pathname}` });
+  });
+
+  const fakeGemma = await startJsonServer(async (request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    if (request.method === "POST" && url.pathname === "/v1/chat/completions") {
+      const body = await readRequestJson(request);
+      gemmaRequests.push(body);
+      writeJson(response, 200, {
+        id: "chatcmpl_fake_gemma",
+        object: "chat.completion",
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: "assistant",
+              content: JSON.stringify({
+                scene: {
+                  ...secondTurnWithCgDecision.scene,
+                  concreteDelta: secondTurnWithCgDecision.concreteDelta,
+                  choices: [
+                    secondTurnWithCgDecision.choices[0],
+                    [
+                      {
+                        label: "Inspect the moving paperclip",
+                        action: "Inspect the self-moving paperclip before touching the folder.",
+                        tag: "관찰",
+                        intent: "Read the new surface."
+                      },
+                      "Wait for the archive voice to speak again"
+                    ]
+                  ],
+                  cgDecision: secondTurnWithCgDecision.cgDecision,
+                  libraryUpdates: [
+                    {
+                      consequence_note: "The paperclip became an actionable consequence in the visible scene."
+                    }
+                  ]
+                }
+              })
+            },
+            finish_reason: "stop"
+          }
+        ]
+      });
+      return;
+    }
+    writeJson(response, 404, { ok: false, message: `unknown path: ${url.pathname}` });
+  });
+
+  try {
+    const result = await runNodeScript(
+      [
+        "scripts/gemma-author-once.mjs",
+        "--world-id",
+        worldId,
+        "--session-id",
+        sessionId,
+        "--local-base-url",
+        fakeBackend.url,
+        "--dispatch-id",
+        dispatchId,
+        "--dispatch-token",
+        dispatchToken,
+        "--artifact-dir",
+        artifactDir
+      ],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          VNPLAYER_GEMMA_BASE_URL: `${fakeGemma.url}/v1`,
+          VNPLAYER_GEMMA_MODEL: "fake-gemma",
+          VNPLAYER_GEMMA_MAX_OUTPUT_TOKENS: "1024"
+        }
+      }
+    );
+
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    expect(gemmaRequests).toHaveLength(1);
+    expect(JSON.stringify(gemmaRequests[0])).toContain("gemma-stateless-current");
+    expect(JSON.stringify(gemmaRequests[0])).toContain("현재 로컬 양식 스냅샷");
+    expect(JSON.stringify(gemmaRequests[0])).toContain("Gemma 서술 분량 계약");
+    expect(JSON.stringify(gemmaRequests[0])).toContain("scene.paragraphs는 8-14개");
+    expect(JSON.stringify(gemmaRequests[0])).not.toContain("/mcp");
+    expect(gemmaRequests[0]?.response_format).toEqual({ type: "json_object" });
+    expect(committedTurn?.dispatchToken).toBe(dispatchToken);
+    expect((committedTurn?.turn as { libraryUpdates?: unknown[] })?.libraryUpdates?.length).toBeGreaterThan(0);
+    expect((committedTurn?.turn as { libraryUpdates?: Array<{ kind?: string; title?: string }> })?.libraryUpdates?.[0]).toEqual(
+      expect.objectContaining({ kind: "consequence_note", title: expect.stringContaining("후과") })
+    );
+    const committedChoices = (committedTurn?.turn as { choices?: Array<{ label?: string; action?: string }> })?.choices ?? [];
+    expect(committedChoices.length).toBe(3);
+    expect(committedChoices.every((choice) => typeof choice.label === "string" && typeof choice.action === "string")).toBe(true);
+    expect(committedChoices[2]).toEqual({
+      label: "Wait for the archive voice to speak again",
+      action: "Wait for the archive voice to speak again"
+    });
+    expect((committedTurn?.turn as { cgDecision?: unknown })?.cgDecision).toBeTruthy();
+    expect(finishBodies[0]).toEqual(
+      expect.objectContaining({
+        status: "succeeded",
+        conversationId: null
+      })
+    );
+  } finally {
+    await fakeGemma.close();
+    await fakeBackend.close();
+  }
+});
 
 test("world entry, turn steering, restore metadata, and existing-world loading", async ({ page }) => {
   const worldTitle = `Rain Archive ${Date.now()}`;
@@ -367,17 +637,21 @@ test("world entry, turn steering, restore metadata, and existing-world loading",
 
   await expect(page.getByRole("region", { name: "세계 진입" })).toBeVisible();
   await expect(page.getByLabel("세계관 시드")).toBeVisible();
+  await expect(page.getByLabel("작성 좌석")).toBeVisible();
   await expect(page.getByRole("button", { name: "기존 세계 저장된 세계를 불러와 이야기를 계속한다." })).toBeVisible();
+  let authorOnceArgs: Record<string, unknown> | null = null;
   await page.route("**/api/webgpt/author-once", async (route) => {
+    authorOnceArgs = route.request().postDataJSON() as Record<string, unknown>;
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ ok: true, started: true, dispatchId: "dispatch_test_auto_text_lane" })
+      body: JSON.stringify({ ok: true, started: true, dispatchId: "dispatch_test_auto_text_lane", provider: authorOnceArgs.provider })
     });
   });
   await page.route("**/api/webgpt/record-action-and-author", async (route) => {
     const args = route.request().postDataJSON() as Record<string, unknown>;
-    const actionResponse = await page.request.post("/api/webgpt/tools/vn_record_player_action", { data: args });
+    const { conversationMode: _conversationMode, provider, ...actionArgs } = args;
+    const actionResponse = await page.request.post("/api/webgpt/tools/vn_record_player_action", { data: actionArgs });
     const actionBody = (await actionResponse.json()) as { ok?: boolean; playerActionId?: string; message?: string };
     if (!actionResponse.ok() || actionBody.ok === false || !actionBody.playerActionId) {
       await route.fulfill({
@@ -394,11 +668,13 @@ test("world entry, turn steering, restore metadata, and existing-world loading",
         ok: true,
         started: true,
         playerActionId: actionBody.playerActionId,
-        dispatchId: "dispatch_test_action_text_lane"
+        dispatchId: "dispatch_test_action_text_lane",
+        provider
       })
     });
   });
 
+  await page.getByLabel("작성 좌석").selectOption("gemma4_local");
   await page.getByLabel("세계관 시드").fill(
     [
       worldTitle,
@@ -415,7 +691,8 @@ test("world entry, turn steering, restore metadata, and existing-world loading",
   await page.getByLabel("기본 이미지 프롬프트").fill(customCgStyle);
   await page.getByRole("button", { name: "세계 열기" }).click();
 
-  await expect(page.getByText("세계가 열렸습니다. WebGPT가 첫 장면을 쓰고 있습니다.")).toBeVisible();
+  await expect(page.getByText("세계가 열렸습니다. Gemma4 llama.cpp가 첫 장면을 쓰고 있습니다.")).toBeVisible();
+  expect(authorOnceArgs?.provider).toBe("gemma4_local");
   await expect(page.getByText("아직 첫 장면이 도착하지 않았습니다")).toBeVisible();
   await expect(page.getByLabel("디버그 도구 표면")).toHaveCount(0);
   await expect(page.getByText("가시 턴 양식")).toHaveCount(0);
@@ -733,7 +1010,7 @@ test("world entry, turn steering, restore metadata, and existing-world loading",
   await expect(readingSurface.getByText("Green desk lamp", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /Open the index/ })).toBeVisible();
   await page.getByRole("button", { name: /Follow the lamp/ }).click();
-  await expect(page.getByText("선택을 보냈습니다. WebGPT가 다음 장면을 쓰고 있습니다.")).toBeVisible();
+  await expect(page.getByText("선택을 보냈습니다. Gemma4 llama.cpp가 다음 장면을 쓰고 있습니다.")).toBeVisible();
 
   const formAfterChoice = await callTool<{
     ok: true;
@@ -832,7 +1109,7 @@ test("world entry, turn steering, restore metadata, and existing-world loading",
   await expect(firstLogTurn.getByText("The archive room opens onto rain-bright glass")).toBeVisible();
   await page.getByLabel("읽기 화면").getByLabel("자유 행동").fill("Listen for the rain behind the shelves.");
   await page.getByRole("button", { name: "전하기" }).click();
-  await expect(page.getByText("행동을 보냈습니다. WebGPT가 다음 장면을 쓰고 있습니다.")).toBeVisible();
+  await expect(page.getByText("행동을 보냈습니다. Gemma4 llama.cpp가 다음 장면을 쓰고 있습니다.")).toBeVisible();
   const formAfterFreeform = await callTool<{
     ok: true;
     form: { readingPacket: { latestPlayerAction: { text: string } | null } };

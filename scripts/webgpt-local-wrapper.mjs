@@ -204,7 +204,7 @@ async function openConversation(browser, params) {
     return page;
   }
 
-  const existing = pages.find((page) => page.url().startsWith("https://chatgpt.com/"));
+  const existing = await reusableChatgptPage(pages);
   if (existing && !params.new_conversation) {
     return existing;
   }
@@ -214,6 +214,42 @@ async function openConversation(browser, params) {
   return page;
 }
 
+async function reusableChatgptPage(pages) {
+  const chatgptPages = pages.filter((page) => page.url().startsWith("https://chatgpt.com/"));
+  for (const page of chatgptPages) {
+    if (await isLikelyAuthenticatedChatgptPage(page)) {
+      return page;
+    }
+  }
+  return chatgptPages[0] ?? null;
+}
+
+async function isLikelyAuthenticatedChatgptPage(page) {
+  try {
+    await page.waitForLoadState("domcontentloaded", { timeout: 1000 }).catch(() => {});
+    return await page.evaluate(() => {
+      const visibleText = (node) => {
+        if (!(node instanceof HTMLElement) || node.offsetParent === null) {
+          return "";
+        }
+        return node.textContent?.trim() ?? "";
+      };
+      const actionTexts = Array.from(document.querySelectorAll("a,button"))
+        .map(visibleText)
+        .filter(Boolean);
+      const hasLoggedOutAction = actionTexts.some((text) => (
+        text === "로그인"
+        || text === "Log in"
+        || text === "Sign up"
+        || text.includes("무료로 회원 가입")
+      ));
+      return !hasLoggedOutAction;
+    });
+  } catch {
+    return false;
+  }
+}
+
 async function findComposer(page) {
   const selectors = [
     "#prompt-textarea",
@@ -221,16 +257,26 @@ async function findComposer(page) {
     "form [contenteditable='true']",
     "textarea"
   ];
-  for (const selector of selectors) {
-    const locator = page.locator(selector).last();
-    if (await locator.count().catch(() => 0)) {
-      await locator.waitFor({ state: "visible", timeout: 2500 }).catch(() => null);
-      if (await locator.isVisible().catch(() => false)) {
-        return locator;
+  const startedAt = Date.now();
+  const timeout = 30_000;
+  let lastBodyPreview = "";
+  while (Date.now() - startedAt < timeout) {
+    await page.waitForLoadState("domcontentloaded", { timeout: 1000 }).catch(() => {});
+    for (const selector of selectors) {
+      const locator = page.locator(selector).last();
+      if (await locator.count().catch(() => 0)) {
+        await locator.waitFor({ state: "visible", timeout: 1000 }).catch(() => null);
+        if (await locator.isVisible().catch(() => false)) {
+          return locator;
+        }
       }
     }
+    lastBodyPreview = await visibleBodyText(page)
+      .then((text) => normalizeComposerText(text).slice(0, 500))
+      .catch(() => "");
+    await page.waitForTimeout(500);
   }
-  throw new Error("ChatGPT composer를 찾지 못했습니다.");
+  throw new Error(`ChatGPT composer를 찾지 못했습니다. url=${page.url()} body=${lastBodyPreview}`);
 }
 
 async function composerHasAppChip(page, appName) {
@@ -389,7 +435,9 @@ async function clickSend(page) {
     "[data-testid='send-button']",
     "button[aria-label*='Send']",
     "button[aria-label*='전송']",
-    "form button[type='submit']"
+    "button[aria-label*='보내기']",
+    "form button[type='submit']",
+    "button.composer-submit-button-color"
   ];
   for (const selector of selectors) {
     const button = page.locator(selector).last();
@@ -401,9 +449,15 @@ async function clickSend(page) {
     }
     const disabled = await button.evaluate((node) => (
       node instanceof HTMLElement
-        && (node.getAttribute("aria-disabled") === "true" || node.hasAttribute("disabled"))
+      && (node.getAttribute("aria-disabled") === "true" || node.hasAttribute("disabled"))
     )).catch(() => false);
-    if (!disabled) {
+    const label = await button.evaluate((node) => [
+      node.getAttribute("aria-label") || "",
+      node.getAttribute("data-testid") || "",
+      node.textContent || ""
+    ].join(" ")).catch(() => "");
+    const isVoiceButton = /voice|받아쓰기/i.test(label);
+    if (!disabled && !isVoiceButton) {
       await button.click();
       return;
     }

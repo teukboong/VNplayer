@@ -71,12 +71,30 @@ Important variables:
   Cloudflare front door.
 - `VNPLAYER_FRONTDOOR_UPDATE_SECRET`: secret used by the tunnel sidecar to update
   the current local origin.
+- `VNPLAYER_WEB_HOST`: Vite reader UI bind host. Use `127.0.0.1` for local-only
+  development or `0.0.0.0` to allow tailnet/local-network devices to open
+  `http://<host-ip>:4173`.
+- `VNPLAYER_WEB_PORT`: Vite reader UI port, default `4173`.
+- `VNPLAYER_WEB_ALLOWED_HOSTS`: comma-separated hostnames accepted by Vite when
+  using LAN hostnames or Tailscale MagicDNS, for example `s-mac-mini`.
 - `VNPLAYER_WEBGPT_MCP_WRAPPER`: wrapper script used to drive the WebGPT browser
   seat. The default is this repo's `scripts/webgpt-local-wrapper.mjs`.
 - `VNPLAYER_WEBGPT_TEXT_PROFILE_DIR`: logged-in browser profile root for the text
   lane.
 - `VNPLAYER_WEBGPT_CG_PROFILE_DIR`: separate logged-in browser profile root for
   the CG lane.
+- `VNPLAYER_TEXT_AUTHOR_PROVIDER`: text author backend, `webgpt` by default or
+  `gemma4_local` for the Gemma llama.cpp OpenAI-compatible server.
+- `VNPLAYER_GEMMA_BASE_URL`: Gemma API base URL, default
+  `http://127.0.0.1:8080/v1`.
+- `VNPLAYER_GEMMA_MODEL`: Gemma model id/alias sent to `/chat/completions`,
+  default `gemma4-local`.
+- `VNPLAYER_GEMMA_MAX_INPUT_TOKENS`: local stateless prompt budget, default
+  `32768`.
+- `VNPLAYER_GEMMA_MAX_OUTPUT_TOKENS`: generation cap sent as `max_tokens`,
+  default `32768`.
+- `VNPLAYER_GEMMA_TEMPERATURE`: Gemma sampling temperature. The default `0.9`
+  favors story variation while `response_format` keeps the JSON boundary tight.
 
 Default browser profile roots use `~/.vnplayer/...` so public configuration does
 not leak private workspace names.
@@ -110,6 +128,22 @@ npm run webgpt:author-once -- \
   --session-id <session-id> \
   --base-url http://127.0.0.1:4174
 ```
+
+To ask the Gemma4 llama.cpp lane to write one next turn:
+
+```bash
+npm run gemma:author-once -- \
+  --world-id <world-id> \
+  --session-id <session-id> \
+  --local-base-url http://127.0.0.1:4174 \
+  --dispatch-id <dispatch-id> \
+  --dispatch-token <dispatch-token>
+```
+
+WebGPT can use its browser chat as an auxiliary context window. `gemma4_local`
+is deliberately stateless: every turn request carries the current VNplayer form,
+recent visible history, active library docs, and compact library outline in a
+fresh `gemma-stateless-current` prompt to the configured llama.cpp server.
 
 The text lane and CG lane must use separate WebGPT browser seats:
 
